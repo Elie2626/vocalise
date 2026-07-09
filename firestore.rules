@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/transcriptions/{transcriptionId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      // Transcriptions are only ever written by the server (Admin SDK, which
+      // bypasses these rules) after verifying the caller's ID token.
+      allow create, update: if false;
+    }
+  }
+}
