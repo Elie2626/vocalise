@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { requireUid, adminDb, adminStorage, AuthError } from "@/lib/firebase/admin";
+import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
 import { transcribeAudioFile, summarizeText, analyzeMultilingual } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isYouTubeUrl } from "@/lib/fetch-source";
 import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
+
+// Corps limité par Vercel à ~4,5 Mo : suffisant pour ~20 min de vocal.
+const MAX_UPLOAD_BYTES = 4.5 * 1024 * 1024;
 
 /** Enregistre l'usage du mois pour un utilisateur (coût API + prix à l'utilisation). */
 async function recordUsage(uid: string, durationSeconds: number) {
@@ -80,6 +83,40 @@ async function runPipeline(originalPath: string, workDir: string) {
   };
 }
 
+interface ParsedRequest {
+  clientId?: string;
+  sourceUrl?: string;
+  file?: File;
+}
+
+async function parseRequest(request: NextRequest): Promise<ParsedRequest | null> {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData().catch(() => null);
+    if (!form) return null;
+    const file = form.get("file");
+    const id = form.get("id");
+    return {
+      clientId: typeof id === "string" ? id : undefined,
+      file: file instanceof File ? file : undefined,
+    };
+  }
+
+  const body = await request.json().catch(() => null);
+  if (!body) return null;
+  return {
+    clientId: typeof body.id === "string" ? body.id : undefined,
+    sourceUrl: typeof body.url === "string" ? body.url : undefined,
+  };
+}
+
+function guessKind(file: File): "audio" | "video" {
+  if (file.type.startsWith("video/")) return "video";
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return ["mp4", "mov", "webm"].includes(ext) ? "video" : "audio";
+}
+
 export async function POST(request: NextRequest) {
   let uid: string;
   try {
@@ -91,21 +128,20 @@ export async function POST(request: NextRequest) {
     throw err;
   }
 
-  const body = await request.json().catch(() => null);
-  const clientId: string | undefined = body?.id;
-  const storagePath: string | undefined = body?.storagePath;
-  const sourceUrl: string | undefined = body?.url;
+  const parsed = await parseRequest(request);
+  if (!parsed || (!parsed.file && !parsed.sourceUrl)) {
+    return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
+  }
+  const { clientId, sourceUrl, file } = parsed;
 
   if (clientId && (clientId.includes("/") || clientId.length > 200)) {
     return NextResponse.json({ error: "Identifiant invalide." }, { status: 400 });
   }
-
-  // Deux modes : upload (storagePath) ou lien (url).
-  if (!storagePath && !sourceUrl) {
-    return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
-  }
-  if (storagePath && !storagePath.startsWith(`users/${uid}/`)) {
-    return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+  if (file && file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "Fichier trop volumineux (max 4,5 Mo). Utilisez un lien pour les gros fichiers." },
+      { status: 413 }
+    );
   }
   if (sourceUrl) {
     try {
@@ -115,10 +151,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const isUpload = Boolean(storagePath);
   const fileName: string =
-    body?.fileName ?? (sourceUrl ? (isYouTubeUrl(sourceUrl) ? "Vidéo YouTube" : "Fichier distant") : "Fichier");
-  const sourceKind: "audio" | "video" = body?.sourceKind === "video" ? "video" : "audio";
+    file?.name ||
+    (sourceUrl ? (isYouTubeUrl(sourceUrl) ? "Vidéo YouTube" : "Fichier distant") : "Fichier");
+  const sourceKind: "audio" | "video" = file ? guessKind(file) : "audio";
 
   const collectionRef = adminDb().collection("users").doc(uid).collection("transcriptions");
   const docRef = clientId ? collectionRef.doc(clientId) : collectionRef.doc();
@@ -126,11 +162,11 @@ export async function POST(request: NextRequest) {
   const initial: Transcription = {
     id: docRef.id,
     ownerUid: uid,
-    storagePath: storagePath ?? null,
+    storagePath: null,
     sourceUrl: sourceUrl ?? null,
     fileName,
     sourceKind,
-    mimeType: body?.mimeType ?? "application/octet-stream",
+    mimeType: file?.type || "application/octet-stream",
     durationSeconds: null,
     status: "processing",
     text: null,
@@ -148,9 +184,8 @@ export async function POST(request: NextRequest) {
   try {
     const originalPath = path.join(workDir, "source");
 
-    if (isUpload) {
-      const [fileBuffer] = await adminStorage().bucket().file(storagePath!).download();
-      await writeFile(originalPath, fileBuffer);
+    if (file) {
+      await writeFile(originalPath, Buffer.from(await file.arrayBuffer()));
     } else {
       const fetched = await fetchSourceFromUrl(sourceUrl!, workDir);
       // fetchSourceFromUrl écrit dans workDir/source ; on récupère aussi les métadonnées réelles.

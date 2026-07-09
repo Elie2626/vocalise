@@ -2,7 +2,6 @@ import "server-only";
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { getStorage, type Storage } from "firebase-admin/storage";
 
 // Lazily constructed so importing this module doesn't require the service
 // account env vars at build time (Next.js evaluates route modules while
@@ -27,16 +26,12 @@ function getAdminApp(): App {
 
 let _adminAuth: Auth | null = null;
 let _adminDb: Firestore | null = null;
-let _adminStorage: Storage | null = null;
 
 export function adminAuth(): Auth {
   return (_adminAuth ??= getAuth(getAdminApp()));
 }
 export function adminDb(): Firestore {
   return (_adminDb ??= getFirestore(getAdminApp()));
-}
-export function adminStorage(): Storage {
-  return (_adminStorage ??= getStorage(getAdminApp()));
 }
 
 export class AuthError extends Error {

@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/lib/auth-context";
-import { uploadFileToStorage, UploadValidationError, type UploadedFile } from "@/lib/upload";
-
-export type { UploadedFile };
+import { uploadAndTranscribe, UploadValidationError } from "@/lib/upload";
 
 export function UploadDropzone({
-  onUploaded,
+  onStarted,
   disabled,
 }: {
-  onUploaded: (file: UploadedFile) => void;
+  /** Appelé quand l'envoi est terminé et la transcription lancée. */
+  onStarted: (transcriptionId: string) => void;
   disabled?: boolean;
 }) {
   const { user } = useAuth();
@@ -28,11 +28,12 @@ export function UploadDropzone({
       setActiveFileName(file.name);
       setProgress(0);
 
+      const transcriptionId = uuidv4();
       try {
-        const uploaded = await uploadFileToStorage(user, file, setProgress);
+        await uploadAndTranscribe(user, file, transcriptionId, setProgress);
         setProgress(null);
         setActiveFileName(null);
-        onUploaded(uploaded);
+        onStarted(transcriptionId);
       } catch (err) {
         setProgress(null);
         setActiveFileName(null);
@@ -43,7 +44,7 @@ export function UploadDropzone({
         );
       }
     },
-    [user, onUploaded]
+    [user, onStarted]
   );
 
   const isBusy = disabled || progress !== null;
@@ -114,7 +115,8 @@ export function UploadDropzone({
           <>
             <p className="font-medium">Glissez-déposez un fichier ici</p>
             <p className="text-sm text-(--color-foreground-muted)">
-              ou cliquez pour parcourir — audio ou vidéo, jusqu&apos;à 300 Mo
+              ou cliquez pour parcourir — audio ou vidéo, jusqu&apos;à 4,5 Mo (≈ 20 min de
+              vocal). Gros fichiers : onglet « Depuis un lien ».
             </p>
           </>
         )}

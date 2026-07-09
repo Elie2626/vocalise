@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query } from "firebase/firestore";
-import { ref, deleteObject } from "firebase/storage";
-import { db, storage } from "@/lib/firebase/client";
+import { db } from "@/lib/firebase/client";
 import type { Transcription } from "@/lib/types";
 
 const STATUS_LABEL: Record<Transcription["status"], string> = {
@@ -34,13 +33,6 @@ export function TranscriptionHistoryList({ uid }: { uid: string }) {
       return;
     }
     await deleteDoc(doc(db, "users", uid, "transcriptions", item.id));
-    if (item.storagePath) {
-      try {
-        await deleteObject(ref(storage, item.storagePath));
-      } catch {
-        // le fichier a peut-être déjà été supprimé ; le document Firestore fait foi
-      }
-    }
   }
 
   if (items === null) {

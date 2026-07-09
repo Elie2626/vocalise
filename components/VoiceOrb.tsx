@@ -19,6 +19,9 @@ function AdaptiveCamera() {
   const { camera, size } = useThree();
 
   useEffect(() => {
+    // Mutation directe de la caméra Three.js : idiome react-three-fiber,
+    // la caméra est un objet impératif externe à React.
+    /* eslint-disable react-hooks/immutability */
     const persp = camera as THREE.PerspectiveCamera;
     const aspect = size.width / size.height;
 
@@ -38,6 +41,7 @@ function AdaptiveCamera() {
 
     persp.lookAt(0, 0, 0);
     persp.updateProjectionMatrix();
+    /* eslint-enable react-hooks/immutability */
   }, [size.width, size.height, camera]);
 
   return null;
@@ -157,7 +161,11 @@ export function VoiceHeaderOrb({ reactive = false, className }: VoiceHeaderOrbPr
     async function setup() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextCtor =
+          window.AudioContext ||
+          (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextCtor) throw new Error("AudioContext unavailable");
+        audioContext = new AudioContextCtor();
         const source = audioContext.createMediaStreamSource(stream);
         const node = audioContext.createAnalyser();
         node.fftSize = 256;

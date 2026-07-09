@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/lib/auth-context";
-import { uploadFileToStorage, UploadValidationError } from "@/lib/upload";
+import { uploadAndTranscribe, UploadValidationError } from "@/lib/upload";
 
 const SHARE_CACHE = "vocalise-share";
 const SHARED_FILE_KEY = "/__shared_media";
@@ -44,22 +44,18 @@ function ShareReceiver() {
 
     async function run() {
       const id = uuidv4();
-      const token = await user!.getIdToken();
-
-      const startTranscription = async (payload: Record<string, unknown>) => {
-        await fetch("/api/transcribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ id, ...payload }),
-        });
-        router.replace(`/app/transcription/${id}`);
-      };
 
       try {
         if (shared === "link") {
           const url = params.get("url");
           if (!url) throw new Error("empty");
-          await startTranscription({ url });
+          const token = await user!.getIdToken();
+          await fetch("/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ id, url }),
+          });
+          router.replace(`/app/transcription/${id}`);
           return;
         }
 
@@ -74,11 +70,11 @@ function ShareReceiver() {
           const file = new File([blob], fileName, { type });
 
           setMessage("Envoi du fichier partagé…");
-          const uploaded = await uploadFileToStorage(user!, file, (p) =>
+          await uploadAndTranscribe(user!, file, id, (p) =>
             setMessage(`Envoi du fichier partagé… ${p}%`)
           );
           await cache.delete(SHARED_FILE_KEY);
-          await startTranscription({ ...uploaded });
+          router.replace(`/app/transcription/${id}`);
           return;
         }
 

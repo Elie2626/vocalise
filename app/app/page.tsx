@@ -4,7 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/lib/auth-context";
-import { UploadDropzone, type UploadedFile } from "@/components/UploadDropzone";
+import { UploadDropzone } from "@/components/UploadDropzone";
 import { TranscriptionHistoryList } from "@/components/TranscriptionHistoryList";
 
 type Tab = "upload" | "link";
@@ -17,27 +17,16 @@ export default function DashboardPage() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [submittingLink, setSubmittingLink] = useState(false);
 
-  const startTranscription = useCallback(
-    async (payload: Record<string, unknown>, id: string) => {
-      if (!user) return;
-      const token = await user.getIdToken();
-      fetch("/api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ id, ...payload }),
-      }).catch((err) => console.error("Transcription request failed", err));
-      router.push(`/app/transcription/${id}`);
+  const handleStarted = useCallback(
+    (transcriptionId: string) => {
+      router.push(`/app/transcription/${transcriptionId}`);
     },
-    [user, router]
-  );
-
-  const handleUploaded = useCallback(
-    (file: UploadedFile) => startTranscription({ ...file }, uuidv4()),
-    [startTranscription]
+    [router]
   );
 
   async function handleLinkSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!user) return;
     setLinkError(null);
     const trimmed = url.trim();
     try {
@@ -50,7 +39,14 @@ export default function DashboardPage() {
       return;
     }
     setSubmittingLink(true);
-    await startTranscription({ url: trimmed }, uuidv4());
+    const id = uuidv4();
+    const token = await user.getIdToken();
+    fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id, url: trimmed }),
+    }).catch((err) => console.error("Transcription request failed", err));
+    router.push(`/app/transcription/${id}`);
   }
 
   if (!user) return null;
@@ -79,7 +75,7 @@ export default function DashboardPage() {
         <div className="mt-5">
           {tab === "upload" ? (
             <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
-              <UploadDropzone onUploaded={handleUploaded} />
+              <UploadDropzone onStarted={handleStarted} />
             </div>
           ) : (
             <form
