@@ -217,6 +217,8 @@ export async function POST(request: NextRequest) {
     await docRef.update({
       status: "error",
       error: message,
+      // Détail technique pour le diagnostic (visible uniquement par le propriétaire).
+      serverError: String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 500),
       updatedAt: Date.now(),
     });
     return NextResponse.json({ error: message }, { status: 500 });
