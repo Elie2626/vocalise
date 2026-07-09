@@ -14,6 +14,32 @@ export async function buildDocxBlob(transcription: Transcription): Promise<Blob>
     );
   }
 
+  const foreign = (transcription.analysis?.runs ?? []).filter((r) => r.lang);
+  if (foreign.length > 0) {
+    children.push(
+      new Paragraph({
+        text: "Mots dans une autre langue",
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 300 },
+      })
+    );
+    for (const r of foreign) {
+      const detail = r.uncertain
+        ? `sens incertain${r.translation ? ` — peut-être « ${r.translation} »` : ""}${r.note ? ` (${r.note})` : ""}`
+        : r.translation ?? "";
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `${r.text}`, bold: true }),
+            new TextRun({ text: ` (${r.lang}) — ${detail}` }),
+          ],
+          bullet: { level: 0 },
+          spacing: { after: 60 },
+        })
+      );
+    }
+  }
+
   children.push(
     new Paragraph({ text: "Transcription", heading: HeadingLevel.HEADING_2, spacing: { before: 300 } })
   );

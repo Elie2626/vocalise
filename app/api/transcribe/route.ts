@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { requireUid, adminDb, adminStorage, AuthError } from "@/lib/firebase/admin";
-import { transcribeAudioFile, summarizeText } from "@/lib/openai";
+import { transcribeAudioFile, summarizeText, analyzeMultilingual } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isYouTubeUrl } from "@/lib/fetch-source";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
@@ -38,13 +38,18 @@ async function runPipeline(originalPath: string, workDir: string) {
   }
 
   const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
-  const summary = await summarizeText(fullText);
+  const [summary, analysis] = await Promise.all([
+    summarizeText(fullText),
+    // L'analyse multilingue est optionnelle : un échec ne doit pas casser la transcription.
+    analyzeMultilingual(fullText).catch(() => null),
+  ]);
 
   return {
     status: "done" as const,
     text: fullText,
     summary,
     segments: allSegments,
+    analysis,
     durationSeconds: cumulativeOffset,
     updatedAt: Date.now(),
   };
@@ -106,6 +111,7 @@ export async function POST(request: NextRequest) {
     text: null,
     summary: null,
     segments: null,
+    analysis: null,
     error: null,
     createdAt: now,
     updatedAt: now,

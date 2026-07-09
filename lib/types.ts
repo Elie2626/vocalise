@@ -6,6 +6,24 @@ export interface TranscriptionSegment {
   text: string;
 }
 
+/** Un fragment consécutif du texte : soit langue principale, soit mot étranger annoté. */
+export interface LanguageRun {
+  text: string;
+  /** Langue (en français) si le fragment n'est pas dans la langue principale. */
+  lang?: string;
+  /** Traduction dans la langue principale. */
+  translation?: string;
+  /** L'IA n'est pas sûre du sens / de la transcription de ce fragment. */
+  uncertain?: boolean;
+  /** Courte explication quand uncertain. */
+  note?: string;
+}
+
+export interface MultilingualAnalysis {
+  mainLanguage: string;
+  runs: LanguageRun[];
+}
+
 export interface Transcription {
   id: string;
   ownerUid: string;
@@ -21,6 +39,7 @@ export interface Transcription {
   text: string | null;
   summary: string | null;
   segments: TranscriptionSegment[] | null;
+  analysis: MultilingualAnalysis | null;
   error: string | null;
   createdAt: number;
   updatedAt: number;

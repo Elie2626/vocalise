@@ -5,6 +5,8 @@ import type { Transcription } from "@/lib/types";
 import { formatTimestamp } from "@/lib/format";
 import { downloadTextFile, downloadBlob } from "@/lib/download";
 import { buildDocxBlob } from "@/lib/docx-export";
+import { downloadTranscriptionPdf } from "@/lib/pdf-export";
+import { AnnotatedTranscript } from "@/components/AnnotatedTranscript";
 
 const buttonClass =
   "flex h-11 items-center justify-center gap-2 rounded-lg border border-(--color-border) px-4 text-sm font-medium transition-colors hover:bg-(--color-bg) disabled:opacity-60";
@@ -12,6 +14,7 @@ const buttonClass =
 export function TranscriptionResult({ transcription }: { transcription: Transcription }) {
   const [copied, setCopied] = useState(false);
   const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   if (transcription.status === "processing") {
     return (
@@ -65,11 +68,28 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
     }
   }
 
+  async function handleDownloadPdf() {
+    setExportingPdf(true);
+    try {
+      await downloadTranscriptionPdf(transcription);
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap gap-3">
         <button type="button" onClick={handleCopy} className={buttonClass}>
           <span aria-live="polite">{copied ? "Copié !" : "Copier le texte"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={exportingPdf}
+          className={buttonClass}
+        >
+          {exportingPdf ? "Génération…" : "Télécharger .pdf"}
         </button>
         <button type="button" onClick={handleDownloadTxt} className={buttonClass}>
           Télécharger .txt
@@ -95,7 +115,12 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
 
       <section className="glass rounded-2xl p-6">
         <h2 className="font-semibold">Texte complet</h2>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{transcription.text}</p>
+        <div className="mt-2">
+          <AnnotatedTranscript
+            analysis={transcription.analysis}
+            fallbackText={transcription.text ?? ""}
+          />
+        </div>
       </section>
 
       {transcription.segments && transcription.segments.length > 0 && (
