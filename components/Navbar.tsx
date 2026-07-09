@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 export function Navbar() {
   const { user, loading } = useAuth();
+  const [open, setOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 border-b border-(--color-border) bg-(--color-bg)/70 backdrop-blur-xl">
@@ -35,7 +37,8 @@ export function Navbar() {
           Vocalise
         </Link>
 
-        <nav className="flex items-center gap-2 sm:gap-4">
+        {/* Desktop */}
+        <nav className="hidden items-center gap-2 sm:flex sm:gap-4">
           {loading ? null : user ? (
             <Link
               href="/app"
@@ -47,16 +50,18 @@ export function Navbar() {
             <>
               <Link
                 href="/pricing"
-                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground) sm:block"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground)"
               >
                 Tarifs
               </Link>
+
               <Link
                 href="/login"
                 className="rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground)"
               >
                 Connexion
               </Link>
+
               <Link
                 href="/signup"
                 className="rounded-lg bg-(--color-primary) px-4 py-2 text-sm font-medium text-(--color-on-primary) transition-colors hover:bg-(--color-primary-hover)"
@@ -66,7 +71,89 @@ export function Navbar() {
             </>
           )}
         </nav>
+
+        {/* Bouton mobile */}
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex h-10 w-10 items-center justify-center rounded-lg sm:hidden"
+          aria-label="Ouvrir le menu"
+        >
+          {open ? (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+            </svg>
+          )}
+        </button>
       </div>
+
+      {/* Menu mobile */}
+      {open && (
+        <div className="border-t border-(--color-border) bg-(--color-bg) sm:hidden">
+          <nav className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4">
+            {loading ? null : user ? (
+              <Link
+                href="/app"
+                onClick={() => setOpen(false)}
+                className="rounded-lg bg-(--color-primary) px-4 py-3 text-center text-sm font-medium text-(--color-on-primary)"
+              >
+                Tableau de bord
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/pricing"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg px-4 py-3 text-sm font-medium hover:bg-white/5"
+                >
+                  Tarifs
+                </Link>
+
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg px-4 py-3 text-sm font-medium hover:bg-white/5"
+                >
+                  Connexion
+                </Link>
+
+                <Link
+                  href="/signup"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg bg-(--color-primary) px-4 py-3 text-center text-sm font-medium text-(--color-on-primary)"
+                >
+                  Essayer gratuitement
+                </Link>
+              </>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
