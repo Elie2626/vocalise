@@ -8,5 +8,11 @@ service cloud.firestore {
       // bypasses these rules) after verifying the caller's ID token.
       allow create, update: if false;
     }
+
+    match /users/{uid}/usage/{period} {
+      // Read-only for the owner; written only by the server (Admin SDK).
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
   }
 }

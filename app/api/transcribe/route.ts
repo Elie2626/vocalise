@@ -6,7 +6,32 @@ import { requireUid, adminDb, adminStorage, AuthError } from "@/lib/firebase/adm
 import { transcribeAudioFile, summarizeText, analyzeMultilingual } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isYouTubeUrl } from "@/lib/fetch-source";
+import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
+import { FieldValue } from "firebase-admin/firestore";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
+
+/** Enregistre l'usage du mois pour un utilisateur (coût API + prix à l'utilisation). */
+async function recordUsage(uid: string, durationSeconds: number) {
+  const minutes = durationSeconds / 60;
+  const now = new Date();
+  const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  await adminDb()
+    .collection("users")
+    .doc(uid)
+    .collection("usage")
+    .doc(period)
+    .set(
+      {
+        period,
+        minutes: FieldValue.increment(minutes),
+        apiCost: FieldValue.increment(apiCostForMinutes(minutes)),
+        userPrice: FieldValue.increment(usagePriceForMinutes(minutes)),
+        transcriptions: FieldValue.increment(1),
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+}
 
 // Long audio/video needs more than the default 10s; requires a Vercel plan that allows it.
 export const maxDuration = 300;
@@ -139,6 +164,11 @@ export async function POST(request: NextRequest) {
 
     const finalUpdate = await runPipeline(originalPath, workDir);
     await docRef.update(finalUpdate);
+
+    // Suivi d'usage (fondation pour la limite abonné et le paiement à l'usage).
+    await recordUsage(uid, finalUpdate.durationSeconds).catch((e) =>
+      console.error("recordUsage failed", e)
+    );
 
     return NextResponse.json({ ...initial, ...finalUpdate });
   } catch (error) {

@@ -46,6 +46,12 @@ export function Navbar() {
           ) : (
             <>
               <Link
+                href="/pricing"
+                className="hidden rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground) sm:block"
+              >
+                Tarifs
+              </Link>
+              <Link
                 href="/login"
                 className="rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground)"
               >
