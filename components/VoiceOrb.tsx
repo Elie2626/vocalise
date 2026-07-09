@@ -1,97 +1,206 @@
 "use client";
 
-import { useRef, useMemo, Suspense } from "react";
+import { useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { MeshDistortMaterial, Float, Environment } from "@react-three/drei";
 import * as THREE from "three";
 
-function Orb() {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const matRef = useRef<React.ComponentRef<typeof MeshDistortMaterial>>(null);
-  const { pointer } = useThree();
+const BAR_COUNT = 72;
+const RING_RADIUS = 2.0;
 
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime();
-    // Pulsation façon onde vocale.
-    const pulse = 1 + Math.sin(t * 1.6) * 0.05;
-    if (meshRef.current) {
-      meshRef.current.scale.setScalar(pulse);
-      // Parallaxe douce vers le pointeur.
-      meshRef.current.rotation.y = THREE.MathUtils.lerp(
-        meshRef.current.rotation.y,
-        pointer.x * 0.5,
-        0.05
-      );
-      meshRef.current.rotation.x = THREE.MathUtils.lerp(
-        meshRef.current.rotation.x,
-        -pointer.y * 0.4,
-        0.05
-      );
-    }
-    if (matRef.current) {
-      // La distorsion respire pour un effet "matière vivante".
-      matRef.current.distort = 0.35 + Math.sin(t * 1.2) * 0.12;
-    }
-  });
+// Couleurs alignées sur le thème "Aurora sombre" (--color-primary / --color-secondary).
+const COLOR_PRIMARY = "#35e0a1";
+const COLOR_SECONDARY = "#46c8f5";
+const COLOR_EMISSIVE = "#0d3b2c";
 
-  return (
-    <Float speed={1.4} rotationIntensity={0.4} floatIntensity={0.7}>
-      <mesh ref={meshRef} castShadow>
-        <sphereGeometry args={[1.25, 128, 128]} />
-        <MeshDistortMaterial
-          ref={matRef}
-          color="#0a5a42"
-          emissive="#072a20"
-          emissiveIntensity={0.35}
-          roughness={0.28}
-          metalness={0.6}
-          distort={0.4}
-          speed={1.8}
-        />
-      </mesh>
-    </Float>
-  );
+// Ajuste la caméra selon le ratio du conteneur : un header étroit et haut
+// (mobile, portrait) a besoin de reculer/lever la caméra pour garder
+// l'anneau entier dans le cadre, sans quoi il déborde ou se retrouve coupé.
+function AdaptiveCamera() {
+  const { camera, size } = useThree();
+
+  useEffect(() => {
+    const persp = camera as THREE.PerspectiveCamera;
+    const aspect = size.width / size.height;
+
+    if (aspect < 0.9) {
+      // Très étroit (mobile portrait serré)
+      persp.position.set(0, 4.2, 8.6);
+      persp.fov = 46;
+    } else if (aspect < 1.6) {
+      // Mobile / tablette
+      persp.position.set(0, 3.4, 7.0);
+      persp.fov = 44;
+    } else {
+      // Desktop, header large
+      persp.position.set(0, 2.6, 5.2);
+      persp.fov = 40;
+    }
+
+    persp.lookAt(0, 0, 0);
+    persp.updateProjectionMatrix();
+  }, [size.width, size.height, camera]);
+
+  return null;
 }
 
-function Rings() {
+type WaveformRingProps = {
+  reactive: boolean;
+  analyser: AnalyserNode | null;
+};
+
+function WaveformRing({ reactive, analyser }: WaveformRingProps) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const freqData = useMemo(
+    () => (analyser ? new Uint8Array(analyser.frequencyBinCount) : null),
+    [analyser]
+  );
+
+  const angles = useMemo(() => {
+    const arr: number[] = [];
+    for (let i = 0; i < BAR_COUNT; i++) {
+      arr.push((i / BAR_COUNT) * Math.PI * 2);
+    }
+    return arr;
+  }, []);
+
+  // Dégradé vert -> cyan le long de l'anneau.
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const cA = new THREE.Color(COLOR_PRIMARY);
+    const cB = new THREE.Color(COLOR_SECONDARY);
+    const tmp = new THREE.Color();
+    for (let i = 0; i < BAR_COUNT; i++) {
+      tmp.copy(cA).lerp(cB, i / BAR_COUNT);
+      mesh.setColorAt(i, tmp);
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, []);
+
   useFrame((state) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const t = state.clock.getElapsedTime();
+
+    for (let i = 0; i < BAR_COUNT; i++) {
+      let amp: number;
+
+      if (reactive && analyser && freqData) {
+        analyser.getByteFrequencyData(freqData);
+        const bin = Math.floor((i / BAR_COUNT) * freqData.length * 0.7);
+        amp = (freqData[bin] / 255) * 1.6;
+      } else {
+        const envelope = 0.5 + 0.5 * Math.abs(Math.sin(t * 1.2));
+        const wave = 0.5 + 0.5 * Math.sin(t * 4 + i * 0.5) * Math.cos(t * 1.6 + i * 0.15);
+        amp = wave * envelope;
+      }
+
+      const len = 0.18 + amp * 1.1;
+      const a = angles[i];
+      const x = Math.cos(a) * RING_RADIUS;
+      const z = Math.sin(a) * RING_RADIUS;
+
+      dummy.position.set(x, len / 2, z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, len, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+
     if (groupRef.current) {
-      groupRef.current.rotation.z = state.clock.getElapsedTime() * 0.12;
+      groupRef.current.rotation.y += 0.0022;
     }
   });
+
   return (
-    <group ref={groupRef} rotation={[Math.PI / 2.6, 0, 0]}>
-      {[1.95, 2.35, 2.8].map((r, i) => (
-        <mesh key={r} rotation={[0, 0, i * 0.4]}>
-          <torusGeometry args={[r, 0.008, 16, 128]} />
-          <meshBasicMaterial color={i % 2 ? "#46c8f5" : "#35e0a1"} transparent opacity={0.25} />
-        </mesh>
-      ))}
+    <group ref={groupRef}>
+      <instancedMesh ref={meshRef} args={[undefined, undefined, BAR_COUNT]}>
+        <boxGeometry args={[0.05, 1, 0.05]} />
+        <meshStandardMaterial
+          roughness={0.3}
+          metalness={0.45}
+          emissive={COLOR_EMISSIVE}
+          emissiveIntensity={0.4}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      {/* Fin cercle au sol, sert de socle discret à l'anneau de barres */}
+      <mesh rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[RING_RADIUS - 0.03, RING_RADIUS + 0.03, 96]} />
+        <meshBasicMaterial color="#123d31" transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
     </group>
   );
 }
 
-export function VoiceOrb() {
-  const dpr = useMemo<[number, number]>(() => [1, 2], []);
+type VoiceHeaderOrbProps = {
+  /**
+   * Si true, demande l'accès au micro et fait réagir les barres à la voix.
+   * Par défaut à false : animation ambiante, pas de popup de permission.
+   */
+  reactive?: boolean;
+  className?: string;
+};
+
+export function VoiceHeaderOrb({ reactive = false, className }: VoiceHeaderOrbProps) {
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+
+  useEffect(() => {
+    if (!reactive) return;
+    let audioContext: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+
+    async function setup() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(stream);
+        const node = audioContext.createAnalyser();
+        node.fftSize = 256;
+        node.smoothingTimeConstant = 0.75;
+        source.connect(node);
+        setAnalyser(node);
+      } catch {
+        // Micro refusé ou indisponible : on reste sur l'animation ambiante.
+        setAnalyser(null);
+      }
+    }
+    setup();
+
+    return () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      audioContext?.close();
+    };
+  }, [reactive]);
+
+  // Cap le pixel ratio plus bas sur mobile pour rester fluide.
+  const dpr = useMemo<[number, number]>(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      return [1, 1.5];
+    }
+    return [1, 2];
+  }, []);
+
   return (
     <Canvas
       dpr={dpr}
-      camera={{ position: [0, 0, 6.2], fov: 45 }}
+      camera={{ position: [0, 2.6, 5.2], fov: 40 }}
       gl={{ antialias: true, alpha: true }}
       aria-hidden
-      className="!absolute inset-0"
+      className={className ?? "!absolute inset-0"}
+      onCreated={({ camera }) => camera.lookAt(0, 0, 0)}
     >
-      <Suspense fallback={null}>
-        <ambientLight intensity={0.5} />
-        <pointLight position={[4, 4, 4]} intensity={40} color="#35e0a1" />
-        <pointLight position={[-4, -2, 2]} intensity={30} color="#46c8f5" />
-        <Orb />
-        <Rings />
-        <Environment preset="city" />
-      </Suspense>
+      <AdaptiveCamera />
+      <ambientLight intensity={0.55} />
+      <pointLight position={[3, 4, 3]} intensity={40} color={COLOR_PRIMARY} />
+      <pointLight position={[-3, 2, -2]} intensity={26} color={COLOR_SECONDARY} />
+      <WaveformRing reactive={reactive} analyser={analyser} />
     </Canvas>
   );
 }
 
-export default VoiceOrb;
+export default VoiceHeaderOrb;
