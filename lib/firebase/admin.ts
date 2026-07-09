@@ -12,6 +12,16 @@ import { getFirestore, type Firestore } from "firebase-admin/firestore";
 // collecting page data, before .env.local/Vercel env vars are relevant).
 let app: App | null = null;
 
+/** Tolère les variantes de collage de la clé : guillemets inclus, \n échappés ou réels. */
+function normalizePrivateKey(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  let key = raw.trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1);
+  }
+  return key.replace(/\\n/g, "\n");
+}
+
 function getAdminApp(): App {
   if (!app) {
     app = getApps().length
@@ -20,7 +30,7 @@ function getAdminApp(): App {
           credential: cert({
             projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
             clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-            privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+            privateKey: normalizePrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY),
           }),
         });
   }
