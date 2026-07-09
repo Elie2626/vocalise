@@ -1,7 +1,11 @@
 import "server-only";
 import { initializeApp, getApps, cert, type App } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+
+// NOTE: on n'importe volontairement PAS firebase-admin/auth : sa dépendance
+// jwks-rsa fait un require() du module ESM jose, ce qui plante sur Vercel
+// (ERR_REQUIRE_ESM). La vérification des ID tokens passe par l'API REST
+// Identity Toolkit (accounts:lookup), qui valide le token côté Google.
 
 // Lazily constructed so importing this module doesn't require the service
 // account env vars at build time (Next.js evaluates route modules while
@@ -18,18 +22,13 @@ function getAdminApp(): App {
             clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
             privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
           }),
-          storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
         });
   }
   return app;
 }
 
-let _adminAuth: Auth | null = null;
 let _adminDb: Firestore | null = null;
 
-export function adminAuth(): Auth {
-  return (_adminAuth ??= getAuth(getAdminApp()));
-}
 export function adminDb(): Firestore {
   return (_adminDb ??= getFirestore(getAdminApp()));
 }
@@ -42,17 +41,35 @@ export class AuthError extends Error {
   }
 }
 
-/** Verifies the Firebase ID token from an Authorization: Bearer header and returns the uid. */
+/**
+ * Vérifie le Firebase ID token (Authorization: Bearer) via l'API REST
+ * Identity Toolkit et retourne l'uid. Google valide la signature,
+ * l'expiration et l'audience du token.
+ */
 export async function requireUid(request: Request): Promise<string> {
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) {
     throw new AuthError("Non autorisé.");
   }
-  try {
-    const decoded = await adminAuth().verifyIdToken(token);
-    return decoded.uid;
-  } catch {
+
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: token }),
+    }
+  );
+
+  if (!response.ok) {
     throw new AuthError("Non autorisé.");
   }
+  const data = (await response.json()) as { users?: { localId?: string; disabled?: boolean }[] };
+  const user = data.users?.[0];
+  if (!user?.localId || user.disabled) {
+    throw new AuthError("Non autorisé.");
+  }
+  return user.localId;
 }
