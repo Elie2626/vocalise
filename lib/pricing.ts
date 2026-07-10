@@ -1,14 +1,17 @@
 // Source unique de vérité pour la tarification.
 // Tout est exprimé en euros.
 
-/** Coût API estimé supporté par Vocalise, par minute d'audio transcrite. */
-export const API_COST_PER_MINUTE = 0.006;
+// Coût API réel ≈ 0,006 €/min (Whisper + passes GPT). On retient une base
+// prudente arrondie à 1 centime/min pour couvrir les frais Stripe, les
+// variations $→€ et les évolutions de tarifs OpenAI.
+/** Base de coût API par minute utilisée pour la tarification. */
+export const API_COST_PER_MINUTE = 0.01;
 
 /** Marge appliquée au coût API pour le prix à l'utilisation. */
 export const USAGE_MARKUP = 1.5;
 
 /** Prix facturé à l'utilisateur, par minute (paiement à l'utilisation). */
-export const USAGE_PRICE_PER_MINUTE = API_COST_PER_MINUTE * USAGE_MARKUP; // 0,009 €/min
+export const USAGE_PRICE_PER_MINUTE = API_COST_PER_MINUTE * USAGE_MARKUP; // 0,015 €/min
 
 /** Abonnement mensuel. */
 export const SUBSCRIPTION_PRICE = 9.99;
@@ -19,7 +22,7 @@ export const SUBSCRIPTION_INCLUDED_API_BUDGET = 9;
 /** Minutes incluses dans l'abonnement (dérivé du budget API). */
 export const SUBSCRIPTION_INCLUDED_MINUTES = Math.round(
   SUBSCRIPTION_INCLUDED_API_BUDGET / API_COST_PER_MINUTE
-); // 1500 min = 25 h
+); // 900 min = 15 h
 
 /** Minutes offertes à l'inscription (essai gratuit). */
 export const FREE_TRIAL_MINUTES = 15;
