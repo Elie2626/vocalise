@@ -24,10 +24,8 @@ export const metadata: Metadata = {
     title: "Vocalise",
     statusBarStyle: "black-translucent",
   },
-  icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
-  },
+  // Le favicon est fourni par les fichiers app/icon.png et app/apple-icon.png
+  // (convention Next.js), qui remplacent l'ancien favicon.ico par défaut.
 };
 
 export const viewport: Viewport = {
