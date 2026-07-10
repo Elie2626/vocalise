@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/lib/auth-context";
 import { UploadDropzone } from "@/components/UploadDropzone";
+import { RecordPanel } from "@/components/RecordPanel";
 import { TranscriptionHistoryList } from "@/components/TranscriptionHistoryList";
 
-type Tab = "upload" | "link";
+type Tab = "upload" | "record" | "link";
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -67,6 +68,9 @@ export default function DashboardPage() {
           <TabButton active={tab === "upload"} onClick={() => setTab("upload")} id="tab-upload" controls="panel-upload">
             Depuis un fichier
           </TabButton>
+          <TabButton active={tab === "record"} onClick={() => setTab("record")} id="tab-record" controls="panel-record">
+            Micro
+          </TabButton>
           <TabButton active={tab === "link"} onClick={() => setTab("link")} id="tab-link" controls="panel-link">
             Depuis un lien
           </TabButton>
@@ -76,6 +80,10 @@ export default function DashboardPage() {
           {tab === "upload" ? (
             <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
               <UploadDropzone onStarted={handleStarted} />
+            </div>
+          ) : tab === "record" ? (
+            <div id="panel-record" role="tabpanel" aria-labelledby="tab-record">
+              <RecordPanel onStarted={handleStarted} />
             </div>
           ) : (
             <form
