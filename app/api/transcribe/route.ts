@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
-import { transcribeAudioFile, summarizeText, analyzeMultilingual } from "@/lib/openai";
+import { transcribeAudioFile, summarizeText, analyzeMultilingual, correctTranscript } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
 import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
@@ -53,7 +53,8 @@ async function runPipeline(originalPath: string, workDir: string) {
   const textParts: string[] = [];
 
   for (const chunkPath of chunkPaths) {
-    const result = await transcribeAudioFile(chunkPath);
+    // On passe la fin du texte précédent pour améliorer la continuité.
+    const result = await transcribeAudioFile(chunkPath, textParts.at(-1));
     for (const seg of result.segments) {
       allSegments.push({
         start: seg.start + cumulativeOffset,
@@ -65,7 +66,10 @@ async function runPipeline(originalPath: string, workDir: string) {
     cumulativeOffset += result.duration;
   }
 
-  const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
+  const rawText = textParts.join(" ").replace(/\s+/g, " ").trim();
+  // Passe de correction : rattrape les mots mal transcrits sans changer le sens.
+  const fullText = await correctTranscript(rawText);
+
   const [summary, analysis] = await Promise.all([
     summarizeText(fullText),
     // L'analyse multilingue est optionnelle : un échec ne doit pas casser la transcription.
