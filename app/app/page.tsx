@@ -87,14 +87,14 @@ export default function DashboardPage() {
               noValidate
             >
               <label htmlFor="source-url" className="text-sm font-medium">
-                Lien vers un fichier audio/vidéo ou une vidéo YouTube
+                Lien direct vers un fichier audio ou vidéo
               </label>
               <div className="mt-2 flex flex-col gap-3 sm:flex-row">
                 <input
                   id="source-url"
                   type="url"
                   inputMode="url"
-                  placeholder="https://… ou https://youtu.be/…"
+                  placeholder="https://exemple.com/audio.mp3"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   className="min-w-0 flex-1 rounded-lg border border-(--color-border) bg-(--color-bg-elev) px-3 py-2.5 text-base outline-none focus:border-(--color-primary)"
@@ -113,9 +113,9 @@ export default function DashboardPage() {
                 </p>
               )}
               <p className="mt-3 text-xs text-(--color-foreground-muted)">
-                Astuce : pour un vocal WhatsApp, enregistre-le puis utilise l&apos;onglet « Depuis un
-                fichier ». Les liens YouTube fonctionnent en local mais peuvent échouer une fois en
-                ligne (restriction YouTube).
+                Le lien doit pointer vers un fichier audio/vidéo (mp3, m4a, mp4…). Les liens
+                YouTube, TikTok ou Instagram ne sont pas supportés — importez plutôt le fichier
+                via l&apos;onglet « Depuis un fichier ».
               </p>
             </form>
           )}

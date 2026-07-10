@@ -5,7 +5,7 @@ import path from "node:path";
 import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
 import { transcribeAudioFile, summarizeText, analyzeMultilingual } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
-import { fetchSourceFromUrl, isYouTubeUrl } from "@/lib/fetch-source";
+import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
 import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
@@ -151,9 +151,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const fileName: string =
-    file?.name ||
-    (sourceUrl ? (isYouTubeUrl(sourceUrl) ? "Vidéo YouTube" : "Fichier distant") : "Fichier");
+  const fileName: string = file?.name || (sourceUrl ? "Fichier distant" : "Fichier");
   const sourceKind: "audio" | "video" = file ? guessKind(file) : "audio";
 
   const collectionRef = adminDb().collection("users").doc(uid).collection("transcriptions");
@@ -209,9 +207,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Transcription failed", error);
     const message =
-      sourceUrl && isYouTubeUrl(sourceUrl)
-        ? "Impossible de récupérer cette vidéo YouTube (elle est peut-être protégée, ou l'hébergeur est bloqué par YouTube). Essayez un autre lien ou un upload de fichier."
-        : error instanceof Error && /http|lien|taille|autoris|audio ou vid/i.test(error.message)
+      sourceUrl && isUnsupportedStreamingUrl(sourceUrl)
+        ? "Les liens YouTube, TikTok, Instagram, etc. ne sont pas supportés. Collez un lien direct vers un fichier audio/vidéo, ou importez le fichier."
+        : error instanceof Error && /http|lien|taille|autoris|audio ou vid|support/i.test(error.message)
           ? error.message
           : "La transcription a échoué. Réessayez avec un autre fichier ou lien.";
     await docRef.update({

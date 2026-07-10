@@ -5,7 +5,6 @@ import { Readable } from "node:stream";
 import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
-import ytdl from "@distube/ytdl-core";
 
 const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;
 
@@ -16,15 +15,24 @@ export interface FetchedSource {
   mimeType: string;
 }
 
-export function isYouTubeUrl(url: string): boolean {
+const STREAMING_HOSTS = [
+  "youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+  "music.youtube.com",
+  "tiktok.com",
+  "instagram.com",
+  "facebook.com",
+  "fb.watch",
+  "vimeo.com",
+  "dailymotion.com",
+];
+
+/** Plateformes de streaming qu'on ne peut pas télécharger de façon fiable/légale. */
+export function isUnsupportedStreamingUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
-    return (
-      host === "youtube.com" ||
-      host === "m.youtube.com" ||
-      host === "youtu.be" ||
-      host === "music.youtube.com"
-    );
+    return STREAMING_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
   } catch {
     return false;
   }
@@ -111,30 +119,11 @@ export async function downloadDirectUrl(rawUrl: string, destDir: string): Promis
   };
 }
 
-export async function downloadYouTube(rawUrl: string, destDir: string): Promise<FetchedSource> {
-  if (!ytdl.validateURL(rawUrl)) {
-    throw new Error("Lien YouTube invalide.");
-  }
-
-  const info = await ytdl.getInfo(rawUrl);
-  const title = info.videoDetails.title.replace(/[^\p{L}\p{N}\s._-]/gu, "").trim() || "youtube";
-  const filePath = path.join(destDir, "source");
-
-  await pipeline(
-    ytdl.downloadFromInfo(info, { quality: "highestaudio", filter: "audioonly" }),
-    createWriteStream(filePath)
-  );
-
-  return {
-    filePath,
-    fileName: `${title}.m4a`,
-    mimeType: "audio/mp4",
-    sourceKind: "audio",
-  };
-}
-
 export async function fetchSourceFromUrl(rawUrl: string, destDir: string): Promise<FetchedSource> {
-  return isYouTubeUrl(rawUrl)
-    ? downloadYouTube(rawUrl, destDir)
-    : downloadDirectUrl(rawUrl, destDir);
+  if (isUnsupportedStreamingUrl(rawUrl)) {
+    throw new Error(
+      "Les liens YouTube, TikTok, Instagram, etc. ne sont pas supportés. Collez un lien direct vers un fichier audio/vidéo, ou importez le fichier."
+    );
+  }
+  return downloadDirectUrl(rawUrl, destDir);
 }
