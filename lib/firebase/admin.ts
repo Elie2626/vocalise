@@ -40,7 +40,13 @@ function getAdminApp(): App {
 let _adminDb: Firestore | null = null;
 
 export function adminDb(): Firestore {
-  return (_adminDb ??= getFirestore(getAdminApp()));
+  if (!_adminDb) {
+    _adminDb = getFirestore(getAdminApp());
+    // L'analyse IA peut renvoyer des champs optionnels absents (ex: note) :
+    // sans ceci, Firestore rejette tout le document au moindre `undefined`.
+    _adminDb.settings({ ignoreUndefinedProperties: true });
+  }
+  return _adminDb;
 }
 
 export class AuthError extends Error {
