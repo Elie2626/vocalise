@@ -26,20 +26,33 @@ interface VerboseTranscription {
   segments?: { start: number; end: number; text: string }[];
 }
 
-// Oriente Whisper vers une ponctuation soignée et les accents français,
-// et sert d'amorce de contexte (le prompt est repris comme "début" attendu).
-const WHISPER_PROMPT =
+// Oriente la transcription vers une ponctuation soignée et les accents français.
+const TRANSCRIBE_PROMPT =
   "Transcription soignée, avec ponctuation, majuscules et accents corrects.";
 
-export async function transcribeAudioFile(filePath: string, priorText?: string): Promise<WhisperResult> {
+/**
+ * Texte haute précision via gpt-4o-transcribe (bien meilleur que Whisper).
+ * Ne fournit pas de timestamps — ceux-ci viennent de Whisper en parallèle.
+ */
+export async function transcribeText(filePath: string, priorText?: string): Promise<string> {
+  const response = await getClient().audio.transcriptions.create({
+    file: fs.createReadStream(filePath),
+    model: "gpt-4o-transcribe",
+    response_format: "text",
+    prompt: priorText ? priorText.slice(-400) : TRANSCRIBE_PROMPT,
+  });
+  const text = typeof response === "string" ? response : ((response as { text?: string }).text ?? "");
+  return text.trim();
+}
+
+/** Segments horodatés + durée via Whisper (le seul modèle qui donne les timestamps). */
+export async function transcribeTimestamps(filePath: string): Promise<WhisperResult> {
   const response = await getClient().audio.transcriptions.create({
     file: fs.createReadStream(filePath),
     model: "whisper-1",
     response_format: "verbose_json",
     timestamp_granularities: ["segment"],
     temperature: 0,
-    // Sur les chunks suivants, la fin du texte précédent améliore la continuité.
-    prompt: priorText ? priorText.slice(-400) : WHISPER_PROMPT,
   });
 
   const result = response as unknown as VerboseTranscription;
@@ -52,40 +65,6 @@ export async function transcribeAudioFile(filePath: string, priorText?: string):
       text: s.text.trim(),
     })),
   };
-}
-
-const CORRECTION_SYSTEM_PROMPT = `Tu corriges une transcription audio automatique.
-
-Corrige UNIQUEMENT :
-- les mots manifestement mal transcrits (erreurs phonétiques, homophones incorrects selon le contexte),
-- l'orthographe, les accents, la ponctuation et les majuscules,
-- le découpage en phrases.
-
-Règles strictes :
-- Ne change PAS le sens, ne reformule pas, n'ajoute et ne supprime aucune information.
-- Garde exactement les mots dans une autre langue tels quels (ne les traduis pas).
-- Garde le style oral d'origine.
-- Si une partie est inintelligible, laisse-la telle quelle.
-
-Réponds uniquement avec le texte corrigé, sans commentaire.`;
-
-/** Passe de correction : rattrape les erreurs de transcription sans changer le sens. */
-export async function correctTranscript(text: string): Promise<string> {
-  if (!text.trim()) return text;
-  try {
-    const completion = await getClient().chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        { role: "system", content: CORRECTION_SYSTEM_PROMPT },
-        { role: "user", content: text },
-      ],
-    });
-    return completion.choices[0]?.message?.content?.trim() || text;
-  } catch {
-    // En cas d'échec, on garde le texte brut plutôt que de faire échouer la transcription.
-    return text;
-  }
 }
 
 export async function summarizeText(text: string): Promise<string> {

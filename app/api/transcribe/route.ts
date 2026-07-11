@@ -3,7 +3,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
-import { transcribeAudioFile, summarizeText, analyzeMultilingual, correctTranscript } from "@/lib/openai";
+import { transcribeText, transcribeTimestamps, summarizeText, analyzeMultilingual } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
 import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
@@ -53,22 +53,24 @@ async function runPipeline(originalPath: string, workDir: string) {
   const textParts: string[] = [];
 
   for (const chunkPath of chunkPaths) {
-    // On passe la fin du texte précédent pour améliorer la continuité.
-    const result = await transcribeAudioFile(chunkPath, textParts.at(-1));
-    for (const seg of result.segments) {
+    // Texte précis (gpt-4o-transcribe) + timestamps (Whisper) en parallèle.
+    // La fin du texte précédent améliore la continuité entre chunks.
+    const [text, timing] = await Promise.all([
+      transcribeText(chunkPath, textParts.at(-1)),
+      transcribeTimestamps(chunkPath),
+    ]);
+    for (const seg of timing.segments) {
       allSegments.push({
         start: seg.start + cumulativeOffset,
         end: seg.end + cumulativeOffset,
         text: seg.text,
       });
     }
-    textParts.push(result.text);
-    cumulativeOffset += result.duration;
+    textParts.push(text);
+    cumulativeOffset += timing.duration;
   }
 
-  const rawText = textParts.join(" ").replace(/\s+/g, " ").trim();
-  // Passe de correction : rattrape les mots mal transcrits sans changer le sens.
-  const fullText = await correctTranscript(rawText);
+  const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
 
   const [summary, analysis] = await Promise.all([
     summarizeText(fullText),
