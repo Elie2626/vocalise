@@ -40,6 +40,10 @@ export interface Transcription {
   summary: string | null;
   segments: TranscriptionSegment[] | null;
   analysis: MultilingualAnalysis | null;
+  /** L'utilisateur a demandé un schéma logique à la création. */
+  wantsDiagram?: boolean;
+  /** Code Mermaid du schéma logique généré, null si non demandé/échec. */
+  diagram: string | null;
   error: string | null;
   createdAt: number;
   updatedAt: number;

@@ -8,10 +8,13 @@ import { uploadAndTranscribe, UploadValidationError } from "@/lib/upload";
 export function UploadDropzone({
   onStarted,
   disabled,
+  diagram,
 }: {
   /** Appelé quand l'envoi est terminé et la transcription lancée. */
   onStarted: (transcriptionId: string) => void;
   disabled?: boolean;
+  /** Générer un schéma logique à la transcription. */
+  diagram?: boolean;
 }) {
   const { user } = useAuth();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,7 +33,7 @@ export function UploadDropzone({
 
       const transcriptionId = uuidv4();
       try {
-        await uploadAndTranscribe(user, file, transcriptionId, setProgress);
+        await uploadAndTranscribe(user, file, transcriptionId, setProgress, { diagram });
         setProgress(null);
         setActiveFileName(null);
         onStarted(transcriptionId);
@@ -44,7 +47,7 @@ export function UploadDropzone({
         );
       }
     },
-    [user, onStarted]
+    [user, onStarted, diagram]
   );
 
   const isBusy = disabled || progress !== null;

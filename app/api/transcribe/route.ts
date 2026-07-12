@@ -3,7 +3,13 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
-import { transcribeText, transcribeTimestamps, summarizeText, analyzeMultilingual } from "@/lib/openai";
+import {
+  transcribeText,
+  transcribeTimestamps,
+  summarizeText,
+  analyzeMultilingual,
+  generateDiagram,
+} from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
 import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
@@ -40,7 +46,7 @@ async function recordUsage(uid: string, durationSeconds: number) {
 export const maxDuration = 300;
 
 /** Transcrit un fichier source local (déjà téléchargé dans workDir) et met à jour Firestore. */
-async function runPipeline(originalPath: string, workDir: string) {
+async function runPipeline(originalPath: string, workDir: string, wantsDiagram: boolean) {
   const normalizedPath = path.join(workDir, "audio.mp3");
   await normalizeToMp3(originalPath, normalizedPath);
 
@@ -72,10 +78,12 @@ async function runPipeline(originalPath: string, workDir: string) {
 
   const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
 
-  const [summary, analysis] = await Promise.all([
+  const [summary, analysis, diagram] = await Promise.all([
     summarizeText(fullText),
     // L'analyse multilingue est optionnelle : un échec ne doit pas casser la transcription.
     analyzeMultilingual(fullText).catch(() => null),
+    // Schéma logique optionnel, uniquement si demandé.
+    wantsDiagram ? generateDiagram(fullText).catch(() => null) : Promise.resolve(null),
   ]);
 
   return {
@@ -84,6 +92,7 @@ async function runPipeline(originalPath: string, workDir: string) {
     summary,
     segments: allSegments,
     analysis,
+    diagram,
     durationSeconds: cumulativeOffset,
     updatedAt: Date.now(),
   };
@@ -93,6 +102,11 @@ interface ParsedRequest {
   clientId?: string;
   sourceUrl?: string;
   file?: File;
+  wantsDiagram: boolean;
+}
+
+function truthy(v: unknown): boolean {
+  return v === true || v === "true" || v === "1";
 }
 
 async function parseRequest(request: NextRequest): Promise<ParsedRequest | null> {
@@ -106,6 +120,7 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
     return {
       clientId: typeof id === "string" ? id : undefined,
       file: file instanceof File ? file : undefined,
+      wantsDiagram: truthy(form.get("diagram")),
     };
   }
 
@@ -114,6 +129,7 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
   return {
     clientId: typeof body.id === "string" ? body.id : undefined,
     sourceUrl: typeof body.url === "string" ? body.url : undefined,
+    wantsDiagram: truthy(body.diagram),
   };
 }
 
@@ -138,7 +154,7 @@ export async function POST(request: NextRequest) {
   if (!parsed || (!parsed.file && !parsed.sourceUrl)) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
-  const { clientId, sourceUrl, file } = parsed;
+  const { clientId, sourceUrl, file, wantsDiagram } = parsed;
 
   if (clientId && (clientId.includes("/") || clientId.length > 200)) {
     return NextResponse.json({ error: "Identifiant invalide." }, { status: 400 });
@@ -177,6 +193,8 @@ export async function POST(request: NextRequest) {
     summary: null,
     segments: null,
     analysis: null,
+    wantsDiagram,
+    diagram: null,
     error: null,
     createdAt: now,
     updatedAt: now,
@@ -201,7 +219,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const finalUpdate = await runPipeline(originalPath, workDir);
+    const finalUpdate = await runPipeline(originalPath, workDir, wantsDiagram);
     await docRef.update(finalUpdate);
 
     // Suivi d'usage (fondation pour la limite abonné et le paiement à l'usage).

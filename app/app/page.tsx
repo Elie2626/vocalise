@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [url, setUrl] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [submittingLink, setSubmittingLink] = useState(false);
+  const [wantsDiagram, setWantsDiagram] = useState(false);
 
   const handleStarted = useCallback(
     (transcriptionId: string) => {
@@ -45,7 +46,7 @@ export default function DashboardPage() {
     fetch("/api/transcribe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id, url: trimmed }),
+      body: JSON.stringify({ id, url: trimmed, diagram: wantsDiagram }),
     }).catch((err) => console.error("Transcription request failed", err));
     router.push(`/app/transcription/${id}`);
   }
@@ -76,14 +77,30 @@ export default function DashboardPage() {
           </TabButton>
         </div>
 
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-(--color-border) glass p-3.5">
+          <input
+            type="checkbox"
+            checked={wantsDiagram}
+            onChange={(e) => setWantsDiagram(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-(--color-primary)"
+          />
+          <span className="text-sm">
+            <span className="font-medium">Générer un schéma logique</span>
+            <span className="mt-0.5 block text-(--color-foreground-muted)">
+              En plus de la transcription, l&apos;IA produit un diagramme (étapes, idées,
+              raisonnement) à partir du contenu.
+            </span>
+          </span>
+        </label>
+
         <div className="mt-5">
           {tab === "upload" ? (
             <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
-              <UploadDropzone onStarted={handleStarted} />
+              <UploadDropzone onStarted={handleStarted} diagram={wantsDiagram} />
             </div>
           ) : tab === "record" ? (
             <div id="panel-record" role="tabpanel" aria-labelledby="tab-record">
-              <RecordPanel onStarted={handleStarted} />
+              <RecordPanel onStarted={handleStarted} diagram={wantsDiagram} />
             </div>
           ) : (
             <form

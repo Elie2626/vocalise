@@ -7,6 +7,7 @@ import { downloadTextFile, downloadBlob } from "@/lib/download";
 import { buildDocxBlob } from "@/lib/docx-export";
 import { downloadTranscriptionPdf } from "@/lib/pdf-export";
 import { AnnotatedTranscript } from "@/components/AnnotatedTranscript";
+import { DiagramView } from "@/components/DiagramView";
 
 const buttonClass =
   "flex h-11 items-center justify-center gap-2 rounded-lg border border-(--color-border) px-4 text-sm font-medium transition-colors hover:bg-(--color-bg) disabled:opacity-60";
@@ -111,6 +112,19 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
             {transcription.summary}
           </p>
         </section>
+      )}
+
+      {transcription.diagram ? (
+        <DiagramView code={transcription.diagram} fileBaseName={baseName} />
+      ) : (
+        transcription.wantsDiagram && (
+          <section className="glass rounded-2xl p-6">
+            <h2 className="font-semibold">Schéma logique</h2>
+            <p className="mt-2 text-sm text-(--color-foreground-muted)">
+              Aucun schéma n&apos;a pu être généré à partir de ce contenu.
+            </p>
+          </section>
+        )
       )}
 
       <section className="glass rounded-2xl p-6">

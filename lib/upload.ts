@@ -45,11 +45,16 @@ export function validateMediaFile(file: File): void {
  * Résout dès que l'ENVOI est terminé (la transcription continue côté serveur) —
  * le résultat arrive ensuite dans Firestore via onSnapshot.
  */
+export interface TranscribeOptions {
+  diagram?: boolean;
+}
+
 export async function uploadAndTranscribe(
   user: User,
   file: File,
   transcriptionId: string,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  options?: TranscribeOptions
 ): Promise<void> {
   validateMediaFile(file);
   const token = await user.getIdToken();
@@ -57,6 +62,7 @@ export async function uploadAndTranscribe(
   const form = new FormData();
   form.append("id", transcriptionId);
   form.append("file", file, file.name || "audio");
+  if (options?.diagram) form.append("diagram", "1");
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

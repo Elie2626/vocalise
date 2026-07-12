@@ -30,7 +30,13 @@ function formatDuration(seconds: number): string {
 // À ~48 kbps opus, 4,5 Mo ≈ 12-13 min. On coupe un peu avant par sécurité.
 const MAX_RECORD_SECONDS = 12 * 60;
 
-export function RecordPanel({ onStarted }: { onStarted: (transcriptionId: string) => void }) {
+export function RecordPanel({
+  onStarted,
+  diagram,
+}: {
+  onStarted: (transcriptionId: string) => void;
+  diagram?: boolean;
+}) {
   const { user } = useAuth();
   const [phase, setPhase] = useState<Phase>("idle");
   const [seconds, setSeconds] = useState(0);
@@ -110,7 +116,7 @@ export function RecordPanel({ onStarted }: { onStarted: (transcriptionId: string
     const id = uuidv4();
     try {
       if (!user) throw new Error("no user");
-      await uploadAndTranscribe(user, file, id);
+      await uploadAndTranscribe(user, file, id, undefined, { diagram });
       onStarted(id);
     } catch (err) {
       setError(

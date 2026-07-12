@@ -84,6 +84,42 @@ export async function summarizeText(text: string): Promise<string> {
   return completion.choices[0]?.message?.content?.trim() ?? "";
 }
 
+const DIAGRAM_SYSTEM_PROMPT = `À partir d'une transcription (souvent orale : idée, projet, process, raisonnement), tu produis UN schéma logique clair au format Mermaid.
+
+Règles :
+- Choisis le type le plus adapté : "flowchart TD" (étapes, décisions, process), ou "mindmap" (idées/concepts hiérarchisés).
+- Réutilise les notions et le vocabulaire de la transcription (en français), sans inventer d'informations absentes.
+- Garde les libellés courts.
+- Syntaxe Mermaid STRICTEMENT valide. Pour flowchart, mets les libellés entre guillemets: A["Texte"]. Évite les caractères qui cassent Mermaid (parenthèses, ; ) dans les libellés.
+- Si le contenu ne se prête pas du tout à un schéma, renvoie un mindmap minimal des idées principales.
+
+Réponds en JSON: {"mermaid":"<code mermaid>"} — uniquement le code, sans balises markdown.`;
+
+/** Génère un schéma logique Mermaid à partir du texte. null si impossible. */
+export async function generateDiagram(text: string): Promise<string | null> {
+  if (!text.trim()) return null;
+  try {
+    const completion = await getClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: DIAGRAM_SYSTEM_PROMPT },
+        { role: "user", content: text },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { mermaid?: unknown };
+    let code = typeof parsed.mermaid === "string" ? parsed.mermaid.trim() : "";
+    // Nettoie d'éventuelles clôtures markdown.
+    code = code.replace(/^```(?:mermaid)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    return code || null;
+  } catch {
+    return null;
+  }
+}
+
 const ANALYSIS_SYSTEM_PROMPT = `Tu analyses une transcription audio qui peut mélanger plusieurs langues.
 
 Détermine la langue principale (celle majoritaire dans le texte).
