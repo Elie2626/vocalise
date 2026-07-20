@@ -30,7 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b border-(--color-border) bg-(--color-bg)/70 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/app" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             <span
               aria-hidden
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-primary) text-(--color-on-primary)"
