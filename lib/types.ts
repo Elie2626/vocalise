@@ -47,10 +47,8 @@ export interface Transcription {
   error: string | null;
   /** Code machine de l'erreur (ex: insufficient_credits). */
   errorCode?: string;
-  /** Comment la transcription a été payée. */
-  billedVia?: "subscription" | "credits";
-  /** Montant débité en crédits (€). */
-  charge?: number;
+  /** Formule d'abonnement qui a couvert la transcription. */
+  plan?: string;
   createdAt: number;
   updatedAt: number;
 }

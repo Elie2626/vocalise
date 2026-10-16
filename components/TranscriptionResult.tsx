@@ -51,12 +51,12 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
         className="rounded-2xl border border-(--color-error) bg-(--color-error-bg) p-6 text-sm text-(--color-error)"
       >
         {transcription.error ?? "La transcription a échoué."}
-        {transcription.errorCode === "insufficient_credits" && (
+        {transcription.errorCode === "not_covered" && (
           <Link
             href="/app/billing"
             className="mt-3 flex h-11 w-fit items-center rounded-lg bg-(--color-primary) px-5 text-sm font-semibold text-(--color-on-primary)"
           >
-            Recharger / s&apos;abonner
+            Voir les abonnements
           </Link>
         )}
       </div>

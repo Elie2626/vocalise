@@ -1,58 +1,68 @@
-// Source unique de vérité pour la tarification.
-// Tout est exprimé en euros.
+// Source unique de vérité pour la tarification. Tout est en euros.
 
-// Coût API réel ≈ 0,006 €/min (Whisper + passes GPT). On retient une base
-// prudente arrondie à 1 centime/min pour couvrir les frais Stripe, les
-// variations $→€ et les évolutions de tarifs OpenAI.
-/** Base de coût API par minute utilisée pour la tarification. */
-export const API_COST_PER_MINUTE = 0.01;
+// Coût API réel ≈ 0,012 €/min (gpt-4o-transcribe + Whisper pour l'horodatage
+// + passes GPT). Sert au suivi d'usage interne.
+/** Coût API estimé par minute d'audio. */
+export const API_COST_PER_MINUTE = 0.012;
 
-/** Marge appliquée au coût API pour le prix à l'utilisation. */
-export const USAGE_MARKUP = 1.5;
+export type PlanId = "essentiel" | "pro" | "business";
 
-/** Prix facturé à l'utilisateur, par minute (paiement à l'utilisation). */
-export const USAGE_PRICE_PER_MINUTE = API_COST_PER_MINUTE * USAGE_MARKUP; // 0,015 €/min
-
-/** Abonnement mensuel. */
-export const SUBSCRIPTION_PRICE = 9.99;
-
-/** Budget de coût API inclus dans l'abonnement, par mois. */
-export const SUBSCRIPTION_INCLUDED_API_BUDGET = 9;
-
-/** Minutes incluses dans l'abonnement (dérivé du budget API). */
-export const SUBSCRIPTION_INCLUDED_MINUTES = Math.round(
-  SUBSCRIPTION_INCLUDED_API_BUDGET / API_COST_PER_MINUTE
-); // 900 min = 15 h
-
-/** Montants de recharge de crédits proposés (euros). */
-export const CREDIT_PACKS = [5, 10, 20, 50];
-
-/** Prix à l'utilisation pour une durée donnée (en minutes). */
-export function usagePriceForMinutes(minutes: number): number {
-  return minutes * USAGE_PRICE_PER_MINUTE;
+export interface Plan {
+  id: PlanId;
+  name: string;
+  /** Prix mensuel TTC. */
+  price: number;
+  /** Minutes de transcription incluses par période d'abonnement. */
+  includedMinutes: number;
+  tagline: string;
+  highlighted?: boolean;
 }
 
-/** Coût API estimé d'une transcription (pour le suivi d'usage / la limite abonné). */
+export const PLANS: Plan[] = [
+  {
+    id: "essentiel",
+    name: "Essentiel",
+    price: 10,
+    includedMinutes: 6 * 60,
+    tagline: "Pour un usage personnel régulier.",
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: 19,
+    includedMinutes: 12 * 60,
+    tagline: "Pour les professionnels qui transcrivent chaque jour.",
+    highlighted: true,
+  },
+  {
+    id: "business",
+    name: "Business",
+    price: 49,
+    includedMinutes: 35 * 60,
+    tagline: "Pour les gros volumes et les équipes.",
+  },
+];
+
+export function getPlan(id: string | null | undefined): Plan | undefined {
+  return PLANS.find((p) => p.id === id);
+}
+
+/** Coût API estimé d'une transcription (suivi d'usage interne). */
 export function apiCostForMinutes(minutes: number): number {
   return minutes * API_COST_PER_MINUTE;
 }
 
-/** Formate un prix en euros, ex: 0,54 €. Précision adaptée aux très petits montants. */
+/** Formate un prix en euros, ex: 19 € ou 9,99 €. */
 export function formatEuro(amount: number): string {
-  const decimals = amount > 0 && amount < 0.1 ? 3 : 2;
-  return `${amount.toFixed(decimals).replace(".", ",")} €`;
+  const s = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return `${s.replace(".", ",")} €`;
 }
 
-export interface UsageTableRow {
-  label: string;
-  minutes: number;
-  price: number;
+/** Formate une durée en minutes, ex: 6 h, 1 h 30, 45 min. */
+export function formatMinutes(minutes: number): string {
+  const m = Math.max(0, Math.floor(minutes));
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (h === 0) return `${rest} min`;
+  return rest === 0 ? `${h} h` : `${h} h ${String(rest).padStart(2, "0")}`;
 }
-
-/** Lignes du tableau « à l'utilisation » affiché sur la page de tarifs. */
-export const USAGE_TABLE: UsageTableRow[] = [
-  { label: "1 minute", minutes: 1 },
-  { label: "10 minutes", minutes: 10 },
-  { label: "1 heure", minutes: 60 },
-  { label: "24 heures", minutes: 24 * 60 },
-].map((r) => ({ ...r, price: usagePriceForMinutes(r.minutes) }));

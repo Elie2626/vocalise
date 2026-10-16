@@ -6,20 +6,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/lib/auth-context";
-import {
-  CREDIT_PACKS,
-  SUBSCRIPTION_PRICE,
-  SUBSCRIPTION_INCLUDED_MINUTES,
-  USAGE_PRICE_PER_MINUTE,
-  formatEuro,
-} from "@/lib/pricing";
+import { PLANS, getPlan, formatEuro, formatMinutes, type PlanId } from "@/lib/pricing";
 
 interface BillingDoc {
-  credits?: number;
   subscriptionId?: string | null;
   subscriptionStatus?: string | null;
+  plan?: PlanId | null;
   currentPeriodEnd?: number | null;
   cancelAtPeriodEnd?: boolean;
+  minutesUsed?: number;
+  usagePeriodEnd?: number | null;
 }
 
 export default function BillingPage() {
@@ -63,8 +59,6 @@ function Billing() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) setMessage({ kind: "error", text: data.error ?? "Vérification impossible." });
-        else if (data.status === "credited")
-          setMessage({ kind: "ok", text: `Paiement reçu : ${formatEuro(data.amount)} ajoutés à votre solde.` });
         else if (data.status === "subscribed")
           setMessage({ kind: "ok", text: "Abonnement activé. Merci !" });
         else setMessage({ kind: "ok", text: "Paiement en cours de validation…" });
@@ -97,9 +91,11 @@ function Billing() {
     }
   }
 
-  async function checkout(kind: "subscription" | "credits", amount?: number) {
-    const data = await call("/api/billing/checkout", { kind, amount }, `${kind}-${amount ?? ""}`);
-    if (data?.url) window.location.href = data.url;
+  async function choosePlan(planId: PlanId) {
+    const data = await call("/api/billing/checkout", { plan: planId }, planId);
+    if (data?.url) window.location.assign(data.url);
+    else if (data?.changed)
+      setMessage({ kind: "ok", text: `Formule changée pour ${getPlan(planId)?.name}.` });
   }
 
   async function toggleCancel(resume: boolean) {
@@ -116,17 +112,22 @@ function Billing() {
   const active =
     (billing?.subscriptionStatus === "active" || billing?.subscriptionStatus === "trialing") &&
     (billing?.currentPeriodEnd ?? 0) > now;
+  const currentPlan = active ? getPlan(billing?.plan) : undefined;
+  const used =
+    billing?.usagePeriodEnd && billing.usagePeriodEnd === billing.currentPeriodEnd
+      ? billing.minutesUsed ?? 0
+      : 0;
   const periodEnd = billing?.currentPeriodEnd
     ? new Date(billing.currentPeriodEnd).toLocaleDateString("fr-FR")
     : null;
-  const includedHours = Math.round(SUBSCRIPTION_INCLUDED_MINUTES / 60);
+  const usedPct = currentPlan ? Math.min(100, (used / currentPlan.includedMinutes) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <Link href="/app" className="text-sm font-medium text-(--color-primary) hover:underline">
         ← Retour au tableau de bord
       </Link>
-      <h1 className="mt-3 text-2xl font-semibold tracking-tight">Facturation</h1>
+      <h1 className="mt-3 text-2xl font-semibold tracking-tight">Abonnement</h1>
 
       {message && (
         <p
@@ -146,44 +147,20 @@ function Billing() {
         </p>
       )}
 
-      <div className="mt-6 grid gap-6 sm:grid-cols-2">
-        <section className="glass rounded-2xl p-6">
-          <h2 className="text-sm font-medium text-(--color-foreground-muted)">Solde de crédits</h2>
-          <p className="mt-2 text-3xl font-semibold tabular-nums">
-            {billing ? formatEuro(billing.credits ?? 0) : "—"}
-          </p>
-          <p className="mt-1 text-xs text-(--color-foreground-muted)">
-            {formatEuro(USAGE_PRICE_PER_MINUTE)} par minute transcrite
-          </p>
-        </section>
-
-        <section className="glass rounded-2xl p-6">
-          <h2 className="text-sm font-medium text-(--color-foreground-muted)">Abonnement</h2>
-          {active ? (
-            <>
-              <p className="mt-2 text-lg font-semibold text-(--color-success)">Actif</p>
+      {currentPlan && (
+        <section className="glass mt-6 rounded-2xl p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-(--color-foreground-muted)">Formule actuelle</p>
+              <p className="mt-1 text-xl font-semibold">
+                {currentPlan.name} · {formatEuro(currentPlan.price)}/mois
+              </p>
               <p className="mt-1 text-xs text-(--color-foreground-muted)">
                 {billing?.cancelAtPeriodEnd
                   ? `Se termine le ${periodEnd}`
                   : `Renouvellement le ${periodEnd}`}
               </p>
-            </>
-          ) : (
-            <p className="mt-2 text-lg font-semibold">Aucun</p>
-          )}
-        </section>
-      </div>
-
-      <section className="glass-strong mt-6 rounded-2xl p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="font-semibold">Abonnement {formatEuro(SUBSCRIPTION_PRICE)} / mois</h2>
-            <p className="mt-1 text-sm text-(--color-foreground-muted)">
-              {includedHours} h de transcription incluses par mois. Au-delà, vos crédits prennent
-              le relais.
-            </p>
-          </div>
-          {active ? (
+            </div>
             <button
               type="button"
               onClick={() => toggleCancel(Boolean(billing?.cancelAtPeriodEnd))}
@@ -192,41 +169,73 @@ function Billing() {
             >
               {billing?.cancelAtPeriodEnd ? "Réactiver" : "Annuler l'abonnement"}
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => checkout("subscription")}
-              disabled={busy !== null}
-              className="flex h-11 items-center rounded-lg bg-(--color-primary) px-5 text-sm font-semibold text-(--color-on-primary) transition-colors hover:bg-(--color-primary-hover) disabled:opacity-60"
-            >
-              {busy === "subscription-" ? "Ouverture…" : "S'abonner"}
-            </button>
-          )}
-        </div>
-      </section>
+          </div>
 
-      <section className="glass mt-6 rounded-2xl p-6">
-        <h2 className="font-semibold">Recharger des crédits</h2>
-        <p className="mt-1 text-sm text-(--color-foreground-muted)">
-          Sans engagement, utilisables à tout moment.
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {CREDIT_PACKS.map((amount) => (
-            <button
-              key={amount}
-              type="button"
-              onClick={() => checkout("credits", amount)}
-              disabled={busy !== null}
-              className="flex h-14 flex-col items-center justify-center rounded-xl border border-(--color-border) text-sm transition-colors hover:border-(--color-primary) disabled:opacity-60"
-            >
-              <span className="font-semibold tabular-nums">{amount} €</span>
-              <span className="text-xs text-(--color-foreground-muted)">
-                ≈ {Math.floor(amount / USAGE_PRICE_PER_MINUTE / 60)} h
+          <div className="mt-5">
+            <div className="flex justify-between text-sm">
+              <span>Utilisé ce mois-ci</span>
+              <span className="tabular-nums">
+                {formatMinutes(used)} / {formatMinutes(currentPlan.includedMinutes)}
               </span>
-            </button>
-          ))}
-        </div>
-      </section>
+            </div>
+            <div
+              className="mt-2 h-2 overflow-hidden rounded-full bg-(--color-border)"
+              role="progressbar"
+              aria-valuenow={Math.round(usedPct)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Quota utilisé"
+            >
+              <div className="h-full rounded-full bg-(--color-primary)" style={{ width: `${usedPct}%` }} />
+            </div>
+          </div>
+        </section>
+      )}
+
+      <div className="mt-6 grid gap-5 md:grid-cols-3">
+        {PLANS.map((plan) => {
+          const isCurrent = currentPlan?.id === plan.id;
+          return (
+            <section
+              key={plan.id}
+              className={`${plan.highlighted ? "glass-strong" : "glass"} relative flex flex-col rounded-2xl p-6`}
+            >
+              {plan.highlighted && (
+                <span className="absolute right-5 top-5 rounded-full bg-(--color-primary) px-2.5 py-0.5 text-xs font-semibold text-(--color-on-primary)">
+                  Populaire
+                </span>
+              )}
+              <h2 className="font-semibold">{plan.name}</h2>
+              <p className="mt-2 flex items-baseline gap-1">
+                <span className="text-3xl font-semibold tabular-nums">{formatEuro(plan.price)}</span>
+                <span className="text-sm text-(--color-foreground-muted)">/ mois</span>
+              </p>
+              <p className="mt-2 text-sm font-medium">
+                {formatMinutes(plan.includedMinutes)} de transcription / mois
+              </p>
+              <p className="mt-1 flex-1 text-sm text-(--color-foreground-muted)">{plan.tagline}</p>
+              <button
+                type="button"
+                onClick={() => choosePlan(plan.id)}
+                disabled={busy !== null || isCurrent}
+                className={`mt-5 flex h-11 items-center justify-center rounded-lg px-4 text-sm font-semibold transition-colors disabled:opacity-60 ${
+                  plan.highlighted
+                    ? "bg-(--color-primary) text-(--color-on-primary) hover:bg-(--color-primary-hover)"
+                    : "border border-(--color-border) hover:bg-(--color-bg)"
+                }`}
+              >
+                {isCurrent
+                  ? "Formule actuelle"
+                  : busy === plan.id
+                    ? "Ouverture…"
+                    : currentPlan
+                      ? "Changer pour celle-ci"
+                      : "S'abonner"}
+              </button>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

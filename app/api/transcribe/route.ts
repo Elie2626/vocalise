@@ -12,8 +12,8 @@ import {
 } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
-import { apiCostForMinutes, usagePriceForMinutes, formatEuro } from "@/lib/pricing";
-import { decideCoverage, debitCredits } from "@/lib/billing";
+import { apiCostForMinutes, formatMinutes } from "@/lib/pricing";
+import { decideCoverage, addMinutesUsed } from "@/lib/billing";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
 
@@ -35,7 +35,6 @@ async function recordUsage(uid: string, durationSeconds: number) {
         period,
         minutes: FieldValue.increment(minutes),
         apiCost: FieldValue.increment(apiCostForMinutes(minutes)),
-        userPrice: FieldValue.increment(usagePriceForMinutes(minutes)),
         transcriptions: FieldValue.increment(1),
         updatedAt: Date.now(),
       },
@@ -46,7 +45,7 @@ async function recordUsage(uid: string, durationSeconds: number) {
 // Long audio/video needs more than the default 10s; requires a Vercel plan that allows it.
 export const maxDuration = 300;
 
-class InsufficientCreditsError extends Error {}
+class NotCoveredError extends Error {}
 
 /** Transcrit l'audio déjà normalisé (normalizedPath) et renvoie la mise à jour Firestore. */
 async function runPipeline(
@@ -241,17 +240,19 @@ export async function POST(request: NextRequest) {
     const durationSeconds = await normalizeToMp3(originalPath, normalizedPath);
     const coverage = await decideCoverage(uid, durationSeconds);
     if (!coverage.ok) {
-      throw new InsufficientCreditsError(
-        `Crédit insuffisant : cette transcription coûte ${formatEuro(coverage.charge)}, votre solde est de ${formatEuro(coverage.credits)}. Rechargez vos crédits ou abonnez-vous.`
+      throw new NotCoveredError(
+        coverage.reason === "no_subscription"
+          ? "Un abonnement est nécessaire pour transcrire. Choisissez une formule pour continuer."
+          : `Quota de votre formule ${coverage.plan.name} atteint : il reste ${formatMinutes(coverage.remainingMinutes)} ce mois-ci et ce fichier dure ${formatMinutes(Math.ceil(durationSeconds / 60))}. Passez à une formule supérieure ou attendez le renouvellement.`
       );
     }
 
     const finalUpdate = await runPipeline(normalizedPath, workDir, { wantsDiagram, plain, vocabulary });
-    await docRef.update({ ...finalUpdate, billedVia: coverage.via, charge: coverage.charge });
+    await docRef.update({ ...finalUpdate, plan: coverage.plan.id });
 
-    if (coverage.via === "credits") {
-      await debitCredits(uid, coverage.charge).catch((e) => console.error("debit failed", e));
-    }
+    await addMinutesUsed(uid, (finalUpdate.durationSeconds || durationSeconds) / 60).catch((e) =>
+      console.error("addMinutesUsed failed", e)
+    );
     await recordUsage(uid, finalUpdate.durationSeconds || durationSeconds).catch((e) =>
       console.error("recordUsage failed", e)
     );
@@ -259,14 +260,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ...initial, ...finalUpdate });
   } catch (error) {
     console.error("Transcription failed", error);
-    if (error instanceof InsufficientCreditsError) {
+    if (error instanceof NotCoveredError) {
       await docRef.update({
         status: "error",
         error: error.message,
-        errorCode: "insufficient_credits",
+        errorCode: "not_covered",
         updatedAt: Date.now(),
       });
-      return NextResponse.json({ error: error.message, code: "insufficient_credits" }, { status: 402 });
+      return NextResponse.json({ error: error.message, code: "not_covered" }, { status: 402 });
     }
     const message =
       sourceUrl && isUnsupportedStreamingUrl(sourceUrl)
