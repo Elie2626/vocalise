@@ -49,9 +49,9 @@ export const maxDuration = 300;
 async function runPipeline(
   originalPath: string,
   workDir: string,
-  wantsDiagram: boolean,
-  vocabulary?: string
+  opts: { wantsDiagram: boolean; plain: boolean; vocabulary?: string }
 ) {
+  const { wantsDiagram, plain, vocabulary } = opts;
   const normalizedPath = path.join(workDir, "audio.mp3");
   await normalizeToMp3(originalPath, normalizedPath);
 
@@ -83,10 +83,11 @@ async function runPipeline(
 
   const fullText = textParts.join(" ").replace(/\s+/g, " ").trim();
 
+  // En mode "transcription seule", on saute résumé et analyse multilingue.
   const [summary, analysis, diagram] = await Promise.all([
-    summarizeText(fullText),
+    plain ? Promise.resolve("") : summarizeText(fullText),
     // L'analyse multilingue est optionnelle : un échec ne doit pas casser la transcription.
-    analyzeMultilingual(fullText).catch(() => null),
+    plain ? Promise.resolve(null) : analyzeMultilingual(fullText).catch(() => null),
     // Schéma logique optionnel, uniquement si demandé.
     wantsDiagram ? generateDiagram(fullText).catch(() => null) : Promise.resolve(null),
   ]);
@@ -108,6 +109,7 @@ interface ParsedRequest {
   sourceUrl?: string;
   file?: File;
   wantsDiagram: boolean;
+  plain: boolean;
   vocabulary?: string;
 }
 
@@ -128,6 +130,7 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
       clientId: typeof id === "string" ? id : undefined,
       file: file instanceof File ? file : undefined,
       wantsDiagram: truthy(form.get("diagram")),
+      plain: truthy(form.get("plain")),
       vocabulary: typeof vocab === "string" && vocab.trim() ? vocab.trim().slice(0, 800) : undefined,
     };
   }
@@ -138,6 +141,7 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
     clientId: typeof body.id === "string" ? body.id : undefined,
     sourceUrl: typeof body.url === "string" ? body.url : undefined,
     wantsDiagram: truthy(body.diagram),
+    plain: truthy(body.plain),
     vocabulary:
       typeof body.vocabulary === "string" && body.vocabulary.trim()
         ? body.vocabulary.trim().slice(0, 800)
@@ -166,7 +170,7 @@ export async function POST(request: NextRequest) {
   if (!parsed || (!parsed.file && !parsed.sourceUrl)) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
-  const { clientId, sourceUrl, file, wantsDiagram, vocabulary } = parsed;
+  const { clientId, sourceUrl, file, wantsDiagram, plain, vocabulary } = parsed;
 
   if (clientId && (clientId.includes("/") || clientId.length > 200)) {
     return NextResponse.json({ error: "Identifiant invalide." }, { status: 400 });
@@ -231,7 +235,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const finalUpdate = await runPipeline(originalPath, workDir, wantsDiagram, vocabulary);
+    const finalUpdate = await runPipeline(originalPath, workDir, { wantsDiagram, plain, vocabulary });
     await docRef.update(finalUpdate);
 
     // Suivi d'usage (fondation pour la limite abonné et le paiement à l'usage).

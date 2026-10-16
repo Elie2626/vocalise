@@ -9,6 +9,7 @@ export function UploadDropzone({
   onStarted,
   disabled,
   diagram,
+  plain,
   vocabulary,
 }: {
   /** Appelé quand l'envoi est terminé et la transcription lancée. */
@@ -16,6 +17,8 @@ export function UploadDropzone({
   disabled?: boolean;
   /** Générer un schéma logique à la transcription. */
   diagram?: boolean;
+  /** Transcription seule (sans résumé ni analyse). */
+  plain?: boolean;
   /** Vocabulaire/noms propres pour améliorer la précision. */
   vocabulary?: string;
 }) {
@@ -36,7 +39,7 @@ export function UploadDropzone({
 
       const transcriptionId = uuidv4();
       try {
-        await uploadAndTranscribe(user, file, transcriptionId, setProgress, { diagram, vocabulary });
+        await uploadAndTranscribe(user, file, transcriptionId, setProgress, { diagram, plain, vocabulary });
         setProgress(null);
         setActiveFileName(null);
         onStarted(transcriptionId);
@@ -50,7 +53,7 @@ export function UploadDropzone({
         );
       }
     },
-    [user, onStarted, diagram, vocabulary]
+    [user, onStarted, diagram, plain, vocabulary]
   );
 
   const isBusy = disabled || progress !== null;

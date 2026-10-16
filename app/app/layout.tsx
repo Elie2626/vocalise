@@ -45,9 +45,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-(--color-foreground-muted) sm:inline">
-              {user.email}
-            </span>
+            <Link
+              href="/app/settings"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-(--color-foreground-muted) transition-colors hover:text-(--color-foreground)"
+            >
+              Réglages
+            </Link>
             <button
               type="button"
               onClick={() => logout().then(() => router.push("/"))}

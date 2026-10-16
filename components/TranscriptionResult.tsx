@@ -1,21 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { Transcription } from "@/lib/types";
 import { formatTimestamp } from "@/lib/format";
 import { downloadTextFile, downloadBlob } from "@/lib/download";
 import { buildDocxBlob } from "@/lib/docx-export";
-import { downloadTranscriptionPdf } from "@/lib/pdf-export";
+import { downloadTranscriptionPdf, buildTranscriptionPdfBase64 } from "@/lib/pdf-export";
 import { AnnotatedTranscript } from "@/components/AnnotatedTranscript";
 import { DiagramView } from "@/components/DiagramView";
+import { useAuth } from "@/lib/auth-context";
+
+type SendState =
+  | { phase: "idle" }
+  | { phase: "sending" }
+  | { phase: "sent"; count: number }
+  | { phase: "error"; message: string; noRecipients?: boolean };
 
 const buttonClass =
   "flex h-11 items-center justify-center gap-2 rounded-lg border border-(--color-border) px-4 text-sm font-medium transition-colors hover:bg-(--color-bg) disabled:opacity-60";
 
 export function TranscriptionResult({ transcription }: { transcription: Transcription }) {
+  const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const [exportingDocx, setExportingDocx] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [send, setSend] = useState<SendState>({ phase: "idle" });
 
   if (transcription.status === "processing") {
     return (
@@ -78,6 +88,32 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
     }
   }
 
+  async function handleSendEmail() {
+    if (!user) return;
+    setSend({ phase: "sending" });
+    try {
+      const pdfBase64 = await buildTranscriptionPdfBase64(transcription);
+      const token = await user.getIdToken();
+      const res = await fetch("/api/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ transcriptionId: transcription.id, pdfBase64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSend({
+          phase: "error",
+          message: data?.error ?? "L'envoi a échoué.",
+          noRecipients: typeof data?.error === "string" && data.error.includes("destinataire"),
+        });
+        return;
+      }
+      setSend({ phase: "sent", count: data.count ?? 0 });
+    } catch {
+      setSend({ phase: "error", message: "L'envoi a échoué. Réessayez." });
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap gap-3">
@@ -103,6 +139,48 @@ export function TranscriptionResult({ transcription }: { transcription: Transcri
         >
           {exportingDocx ? "Génération…" : "Télécharger .docx"}
         </button>
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Envoyer par email</h2>
+            <p className="mt-0.5 text-sm text-(--color-foreground-muted)">
+              Envoie cette transcription (PDF) aux destinataires de votre compte.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSendEmail}
+            disabled={send.phase === "sending"}
+            className="flex h-11 items-center justify-center gap-2 rounded-lg bg-(--color-primary) px-5 text-sm font-semibold text-(--color-on-primary) transition-colors hover:bg-(--color-primary-hover) disabled:opacity-60"
+          >
+            {send.phase === "sending" ? "Envoi…" : "Valider et envoyer"}
+          </button>
+        </div>
+
+        {send.phase === "sent" && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-3 rounded-lg bg-(--color-success-bg) px-3 py-2 text-sm text-(--color-success)"
+          >
+            Envoyé à {send.count} destinataire{send.count > 1 ? "s" : ""}.
+          </p>
+        )}
+        {send.phase === "error" && (
+          <p role="alert" className="mt-3 rounded-lg bg-(--color-error-bg) px-3 py-2 text-sm text-(--color-error)">
+            {send.message}
+            {send.noRecipients && (
+              <>
+                {" "}
+                <Link href="/app/settings" className="font-medium underline">
+                  Ajouter des destinataires
+                </Link>
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       {transcription.summary && (

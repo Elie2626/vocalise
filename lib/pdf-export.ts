@@ -93,7 +93,7 @@ function buildPrintableHtml(t: Transcription): string {
   return parts.join("");
 }
 
-export async function downloadTranscriptionPdf(t: Transcription): Promise<void> {
+async function buildPdf(t: Transcription) {
   const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
     import("jspdf"),
     import("html2canvas"),
@@ -129,10 +129,21 @@ export async function downloadTranscriptionPdf(t: Transcription): Promise<void> 
       pdf.addImage(imgData, "JPEG", margin, position, imgW, imgH);
       heightLeft -= contentH;
     }
-
-    const baseName = t.fileName.replace(/\.[^/.]+$/, "") || "transcription";
-    pdf.save(`${baseName}.pdf`);
+    return pdf;
   } finally {
     document.body.removeChild(container);
   }
+}
+
+export async function downloadTranscriptionPdf(t: Transcription): Promise<void> {
+  const pdf = await buildPdf(t);
+  const baseName = t.fileName.replace(/\.[^/.]+$/, "") || "transcription";
+  pdf.save(`${baseName}.pdf`);
+}
+
+/** Retourne le PDF encodé en base64 (sans en-tête data:) pour l'envoi par email. */
+export async function buildTranscriptionPdfBase64(t: Transcription): Promise<string> {
+  const pdf = await buildPdf(t);
+  const dataUri = pdf.output("datauristring");
+  return dataUri.split(",")[1] ?? "";
 }

@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [submittingLink, setSubmittingLink] = useState(false);
   const [wantsDiagram, setWantsDiagram] = useState(false);
+  const [plain, setPlain] = useState(false);
   const [vocabulary, setVocabulary] = useState("");
 
   const handleStarted = useCallback(
@@ -47,7 +48,7 @@ export default function DashboardPage() {
     fetch("/api/transcribe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id, url: trimmed, diagram: wantsDiagram, vocabulary }),
+      body: JSON.stringify({ id, url: trimmed, diagram: wantsDiagram, plain, vocabulary }),
     }).catch((err) => console.error("Transcription request failed", err));
     router.push(`/app/transcription/${id}`);
   }
@@ -79,6 +80,21 @@ export default function DashboardPage() {
         </div>
 
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-(--color-border) glass p-3.5">
+          <input
+            type="checkbox"
+            checked={plain}
+            onChange={(e) => setPlain(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-(--color-primary)"
+          />
+          <span className="text-sm">
+            <span className="font-medium">Transcription seule</span>
+            <span className="mt-0.5 block text-(--color-foreground-muted)">
+              Uniquement le texte, sans résumé ni analyse multilingue (plus rapide).
+            </span>
+          </span>
+        </label>
+
+        <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-(--color-border) glass p-3.5">
           <input
             type="checkbox"
             checked={wantsDiagram}
@@ -117,11 +133,11 @@ export default function DashboardPage() {
         <div className="mt-5">
           {tab === "upload" ? (
             <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
-              <UploadDropzone onStarted={handleStarted} diagram={wantsDiagram} vocabulary={vocabulary} />
+              <UploadDropzone onStarted={handleStarted} diagram={wantsDiagram} plain={plain} vocabulary={vocabulary} />
             </div>
           ) : tab === "record" ? (
             <div id="panel-record" role="tabpanel" aria-labelledby="tab-record">
-              <RecordPanel onStarted={handleStarted} diagram={wantsDiagram} vocabulary={vocabulary} />
+              <RecordPanel onStarted={handleStarted} diagram={wantsDiagram} plain={plain} vocabulary={vocabulary} />
             </div>
           ) : (
             <form
