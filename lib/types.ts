@@ -45,6 +45,12 @@ export interface Transcription {
   /** Code Mermaid du schéma logique généré, null si non demandé/échec. */
   diagram: string | null;
   error: string | null;
+  /** Code machine de l'erreur (ex: insufficient_credits). */
+  errorCode?: string;
+  /** Comment la transcription a été payée. */
+  billedVia?: "subscription" | "credits";
+  /** Montant débité en crédits (€). */
+  charge?: number;
   createdAt: number;
   updatedAt: number;
 }

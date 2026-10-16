@@ -12,8 +12,18 @@ if (ffmpegPath) {
 const CHUNK_SECONDS = 20 * 60;
 export const MAX_SINGLE_FILE_BYTES = 24 * 1024 * 1024;
 
-export function normalizeToMp3(inputPath: string, outputPath: string): Promise<void> {
+function parseTimemark(mark: string | undefined): number {
+  if (!mark) return 0;
+  const parts = mark.split(":").map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return 0;
+  return parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+/** Convertit en mp3 mono 16 kHz nettoyé et renvoie la durée audio (secondes). */
+export function normalizeToMp3(inputPath: string, outputPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
+    let inputDuration = 0;
+    let lastTimemark = 0;
     ffmpeg(inputPath)
       .noVideo()
       // Nettoyage léger pour améliorer la clarté de la voix avant transcription :
@@ -24,7 +34,22 @@ export function normalizeToMp3(inputPath: string, outputPath: string): Promise<v
       .audioChannels(1)
       .audioFrequency(16000)
       .output(outputPath)
-      .on("end", () => resolve())
+      .on("codecData", (data: { duration?: string }) => {
+        inputDuration = parseTimemark(data.duration);
+      })
+      .on("progress", (p: { timemark?: string }) => {
+        lastTimemark = Math.max(lastTimemark, parseTimemark(p.timemark));
+      })
+      .on("end", () => {
+        if (inputDuration > 0) return resolve(inputDuration);
+        if (lastTimemark > 0) return resolve(lastTimemark);
+        // Repli : 64 kbit/s → 8000 octets/s.
+        try {
+          resolve(fs.statSync(outputPath).size / 8000);
+        } catch {
+          resolve(0);
+        }
+      })
       .on("error", (err) => reject(err))
       .run();
   });

@@ -91,7 +91,7 @@ export default function Home() {
                 href="/signup"
                 className="flex h-12 w-full items-center justify-center rounded-full bg-(--color-primary) px-7 text-base font-semibold text-(--color-on-primary) shadow-[0_0_40px_-8px_rgba(53,224,161,0.6)] transition-all hover:bg-(--color-primary-hover) hover:shadow-[0_0_50px_-6px_rgba(53,224,161,0.75)] sm:w-auto"
               >
-                Essayer gratuitement
+                Commencer
               </Link>
               <a
                 href="#comment-ca-marche"
@@ -155,7 +155,7 @@ export default function Home() {
               Prêt à gagner du temps ?
             </h2>
             <p className="mt-3 text-(--color-foreground-muted)">
-              Créez votre compte gratuitement et transcrivez votre premier fichier en quelques
+              Créez votre compte et transcrivez votre premier fichier en quelques
               minutes.
             </p>
             <Link

@@ -53,7 +53,7 @@ export default function SignupPage() {
     <div className="glass-strong rounded-2xl p-8">
       <h1 className="text-xl font-semibold">Créer un compte</h1>
       <p className="mt-1 text-sm text-(--color-foreground-muted)">
-        Commencez à transcrire vos vocaux et vidéos gratuitement.
+        Transcrivez vos vocaux et vidéos en quelques secondes.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4" noValidate>

@@ -6,7 +6,6 @@ import {
   SUBSCRIPTION_PRICE,
   SUBSCRIPTION_INCLUDED_MINUTES,
   USAGE_PRICE_PER_MINUTE,
-  FREE_TRIAL_MINUTES,
   USAGE_TABLE,
   formatEuro,
 } from "@/lib/pricing";
@@ -14,7 +13,7 @@ import {
 export const metadata: Metadata = {
   title: "Tarifs — Vocalise",
   description:
-    "Essai gratuit, abonnement mensuel ou paiement à l'utilisation : choisissez la formule Vocalise qui vous convient.",
+    "Abonnement mensuel ou paiement à l'utilisation : choisissez la formule Vocalise qui vous convient.",
 };
 
 const includedHours = Math.round(SUBSCRIPTION_INCLUDED_MINUTES / 60);
@@ -35,13 +34,13 @@ export default function PricingPage() {
         <section className="mx-auto max-w-6xl px-4 pt-16 pb-8 text-center sm:px-6">
           <span className="inline-flex items-center gap-2 rounded-full border border-(--color-border) glass px-4 py-1.5 text-xs font-medium text-(--color-foreground-muted)">
             <span className="h-1.5 w-1.5 rounded-full bg-(--color-primary)" />
-            {`${FREE_TRIAL_MINUTES} minutes offertes à l'inscription`}
+            Sans engagement
           </span>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-5xl">
             <span className="text-gradient">Des tarifs simples</span>, sans surprise
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-(--color-foreground-muted)">
-            Commencez gratuitement. Ensuite, choisissez l&apos;abonnement si vous transcrivez
+            Choisissez l&apos;abonnement si vous transcrivez
             souvent, ou payez seulement ce que vous utilisez.
           </p>
         </section>
@@ -77,7 +76,7 @@ export default function PricingPage() {
               href="/signup"
               className="mt-8 flex h-12 items-center justify-center rounded-full bg-(--color-primary) px-6 text-base font-semibold text-(--color-on-primary) shadow-[0_0_40px_-8px_rgba(53,224,161,0.6)] transition-colors hover:bg-(--color-primary-hover)"
             >
-              Commencer l&apos;essai gratuit
+              S&apos;abonner
             </Link>
           </div>
 

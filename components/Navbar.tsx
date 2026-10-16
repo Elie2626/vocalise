@@ -66,7 +66,7 @@ export function Navbar() {
                 href="/signup"
                 className="rounded-lg bg-(--color-primary) px-4 py-2 text-sm font-medium text-(--color-on-primary) transition-colors hover:bg-(--color-primary-hover)"
               >
-                Essayer gratuitement
+                Commencer
               </Link>
             </>
           )}
@@ -147,7 +147,7 @@ export function Navbar() {
                   onClick={() => setOpen(false)}
                   className="rounded-lg bg-(--color-primary) px-4 py-3 text-center text-sm font-medium text-(--color-on-primary)"
                 >
-                  Essayer gratuitement
+                  Commencer
                 </Link>
               </>
             )}

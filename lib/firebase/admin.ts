@@ -63,6 +63,11 @@ export class AuthError extends Error {
  * l'expiration et l'audience du token.
  */
 export async function requireUid(request: Request): Promise<string> {
+  return (await requireUser(request)).uid;
+}
+
+/** Comme requireUid, mais renvoie aussi l'email du compte. */
+export async function requireUser(request: Request): Promise<{ uid: string; email?: string }> {
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) {
@@ -82,10 +87,12 @@ export async function requireUid(request: Request): Promise<string> {
   if (!response.ok) {
     throw new AuthError("Non autorisé.");
   }
-  const data = (await response.json()) as { users?: { localId?: string; disabled?: boolean }[] };
+  const data = (await response.json()) as {
+    users?: { localId?: string; email?: string; disabled?: boolean }[];
+  };
   const user = data.users?.[0];
   if (!user?.localId || user.disabled) {
     throw new AuthError("Non autorisé.");
   }
-  return user.localId;
+  return { uid: user.localId, email: user.email };
 }

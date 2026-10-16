@@ -12,7 +12,8 @@ import {
 } from "@/lib/openai";
 import { normalizeToMp3, splitIntoChunks, MAX_SINGLE_FILE_BYTES } from "@/lib/audio";
 import { fetchSourceFromUrl, isUnsupportedStreamingUrl } from "@/lib/fetch-source";
-import { apiCostForMinutes, usagePriceForMinutes } from "@/lib/pricing";
+import { apiCostForMinutes, usagePriceForMinutes, formatEuro } from "@/lib/pricing";
+import { decideCoverage, debitCredits } from "@/lib/billing";
 import { FieldValue } from "firebase-admin/firestore";
 import type { Transcription, TranscriptionSegment } from "@/lib/types";
 
@@ -45,15 +46,15 @@ async function recordUsage(uid: string, durationSeconds: number) {
 // Long audio/video needs more than the default 10s; requires a Vercel plan that allows it.
 export const maxDuration = 300;
 
-/** Transcrit un fichier source local (déjà téléchargé dans workDir) et met à jour Firestore. */
+class InsufficientCreditsError extends Error {}
+
+/** Transcrit l'audio déjà normalisé (normalizedPath) et renvoie la mise à jour Firestore. */
 async function runPipeline(
-  originalPath: string,
+  normalizedPath: string,
   workDir: string,
   opts: { wantsDiagram: boolean; plain: boolean; vocabulary?: string }
 ) {
   const { wantsDiagram, plain, vocabulary } = opts;
-  const normalizedPath = path.join(workDir, "audio.mp3");
-  await normalizeToMp3(originalPath, normalizedPath);
 
   const { size } = await stat(normalizedPath);
   const chunkPaths =
@@ -235,17 +236,38 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const finalUpdate = await runPipeline(originalPath, workDir, { wantsDiagram, plain, vocabulary });
-    await docRef.update(finalUpdate);
+    // Conversion + durée, puis contrôle du paiement AVANT d'appeler OpenAI.
+    const normalizedPath = path.join(workDir, "audio.mp3");
+    const durationSeconds = await normalizeToMp3(originalPath, normalizedPath);
+    const coverage = await decideCoverage(uid, durationSeconds);
+    if (!coverage.ok) {
+      throw new InsufficientCreditsError(
+        `Crédit insuffisant : cette transcription coûte ${formatEuro(coverage.charge)}, votre solde est de ${formatEuro(coverage.credits)}. Rechargez vos crédits ou abonnez-vous.`
+      );
+    }
 
-    // Suivi d'usage (fondation pour la limite abonné et le paiement à l'usage).
-    await recordUsage(uid, finalUpdate.durationSeconds).catch((e) =>
+    const finalUpdate = await runPipeline(normalizedPath, workDir, { wantsDiagram, plain, vocabulary });
+    await docRef.update({ ...finalUpdate, billedVia: coverage.via, charge: coverage.charge });
+
+    if (coverage.via === "credits") {
+      await debitCredits(uid, coverage.charge).catch((e) => console.error("debit failed", e));
+    }
+    await recordUsage(uid, finalUpdate.durationSeconds || durationSeconds).catch((e) =>
       console.error("recordUsage failed", e)
     );
 
     return NextResponse.json({ ...initial, ...finalUpdate });
   } catch (error) {
     console.error("Transcription failed", error);
+    if (error instanceof InsufficientCreditsError) {
+      await docRef.update({
+        status: "error",
+        error: error.message,
+        errorCode: "insufficient_credits",
+        updatedAt: Date.now(),
+      });
+      return NextResponse.json({ error: error.message, code: "insufficient_credits" }, { status: 402 });
+    }
     const message =
       sourceUrl && isUnsupportedStreamingUrl(sourceUrl)
         ? "Les liens YouTube, TikTok, Instagram, etc. ne sont pas supportés. Collez un lien direct vers un fichier audio/vidéo, ou importez le fichier."

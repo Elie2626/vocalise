@@ -24,8 +24,8 @@ export const SUBSCRIPTION_INCLUDED_MINUTES = Math.round(
   SUBSCRIPTION_INCLUDED_API_BUDGET / API_COST_PER_MINUTE
 ); // 900 min = 15 h
 
-/** Minutes offertes à l'inscription (essai gratuit). */
-export const FREE_TRIAL_MINUTES = 15;
+/** Montants de recharge de crédits proposés (euros). */
+export const CREDIT_PACKS = [5, 10, 20, 50];
 
 /** Prix à l'utilisation pour une durée donnée (en minutes). */
 export function usagePriceForMinutes(minutes: number): number {
