@@ -46,7 +46,12 @@ async function recordUsage(uid: string, durationSeconds: number) {
 export const maxDuration = 300;
 
 /** Transcrit un fichier source local (déjà téléchargé dans workDir) et met à jour Firestore. */
-async function runPipeline(originalPath: string, workDir: string, wantsDiagram: boolean) {
+async function runPipeline(
+  originalPath: string,
+  workDir: string,
+  wantsDiagram: boolean,
+  vocabulary?: string
+) {
   const normalizedPath = path.join(workDir, "audio.mp3");
   await normalizeToMp3(originalPath, normalizedPath);
 
@@ -62,7 +67,7 @@ async function runPipeline(originalPath: string, workDir: string, wantsDiagram: 
     // Texte précis (gpt-4o-transcribe) + timestamps (Whisper) en parallèle.
     // La fin du texte précédent améliore la continuité entre chunks.
     const [text, timing] = await Promise.all([
-      transcribeText(chunkPath, textParts.at(-1)),
+      transcribeText(chunkPath, textParts.at(-1), vocabulary),
       transcribeTimestamps(chunkPath),
     ]);
     for (const seg of timing.segments) {
@@ -103,6 +108,7 @@ interface ParsedRequest {
   sourceUrl?: string;
   file?: File;
   wantsDiagram: boolean;
+  vocabulary?: string;
 }
 
 function truthy(v: unknown): boolean {
@@ -117,10 +123,12 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
     if (!form) return null;
     const file = form.get("file");
     const id = form.get("id");
+    const vocab = form.get("vocabulary");
     return {
       clientId: typeof id === "string" ? id : undefined,
       file: file instanceof File ? file : undefined,
       wantsDiagram: truthy(form.get("diagram")),
+      vocabulary: typeof vocab === "string" && vocab.trim() ? vocab.trim().slice(0, 800) : undefined,
     };
   }
 
@@ -130,6 +138,10 @@ async function parseRequest(request: NextRequest): Promise<ParsedRequest | null>
     clientId: typeof body.id === "string" ? body.id : undefined,
     sourceUrl: typeof body.url === "string" ? body.url : undefined,
     wantsDiagram: truthy(body.diagram),
+    vocabulary:
+      typeof body.vocabulary === "string" && body.vocabulary.trim()
+        ? body.vocabulary.trim().slice(0, 800)
+        : undefined,
   };
 }
 
@@ -154,7 +166,7 @@ export async function POST(request: NextRequest) {
   if (!parsed || (!parsed.file && !parsed.sourceUrl)) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
-  const { clientId, sourceUrl, file, wantsDiagram } = parsed;
+  const { clientId, sourceUrl, file, wantsDiagram, vocabulary } = parsed;
 
   if (clientId && (clientId.includes("/") || clientId.length > 200)) {
     return NextResponse.json({ error: "Identifiant invalide." }, { status: 400 });
@@ -219,7 +231,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const finalUpdate = await runPipeline(originalPath, workDir, wantsDiagram);
+    const finalUpdate = await runPipeline(originalPath, workDir, wantsDiagram, vocabulary);
     await docRef.update(finalUpdate);
 
     // Suivi d'usage (fondation pour la limite abonné et le paiement à l'usage).

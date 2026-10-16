@@ -33,9 +33,11 @@ const MAX_RECORD_SECONDS = 12 * 60;
 export function RecordPanel({
   onStarted,
   diagram,
+  vocabulary,
 }: {
   onStarted: (transcriptionId: string) => void;
   diagram?: boolean;
+  vocabulary?: string;
 }) {
   const { user } = useAuth();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -116,7 +118,7 @@ export function RecordPanel({
     const id = uuidv4();
     try {
       if (!user) throw new Error("no user");
-      await uploadAndTranscribe(user, file, id, undefined, { diagram });
+      await uploadAndTranscribe(user, file, id, undefined, { diagram, vocabulary });
       onStarted(id);
     } catch (err) {
       setError(

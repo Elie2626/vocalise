@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [submittingLink, setSubmittingLink] = useState(false);
   const [wantsDiagram, setWantsDiagram] = useState(false);
+  const [vocabulary, setVocabulary] = useState("");
 
   const handleStarted = useCallback(
     (transcriptionId: string) => {
@@ -46,7 +47,7 @@ export default function DashboardPage() {
     fetch("/api/transcribe", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id, url: trimmed, diagram: wantsDiagram }),
+      body: JSON.stringify({ id, url: trimmed, diagram: wantsDiagram, vocabulary }),
     }).catch((err) => console.error("Transcription request failed", err));
     router.push(`/app/transcription/${id}`);
   }
@@ -93,14 +94,34 @@ export default function DashboardPage() {
           </span>
         </label>
 
+        <div className="mt-3">
+          <label htmlFor="vocabulary" className="text-sm font-medium">
+            Vocabulaire / noms propres{" "}
+            <span className="font-normal text-(--color-foreground-muted)">(optionnel)</span>
+          </label>
+          <textarea
+            id="vocabulary"
+            value={vocabulary}
+            onChange={(e) => setVocabulary(e.target.value)}
+            rows={2}
+            maxLength={800}
+            placeholder="Prénoms, marques, termes métier, acronymes… séparés par des virgules"
+            className="mt-1.5 w-full resize-y rounded-xl border border-(--color-border) bg-(--color-bg-elev) px-3 py-2.5 text-sm outline-none focus:border-(--color-primary)"
+          />
+          <p className="mt-1 text-xs text-(--color-foreground-muted)">
+            Aide l&apos;IA à bien orthographier les mots qu&apos;elle rate souvent (noms propres,
+            jargon).
+          </p>
+        </div>
+
         <div className="mt-5">
           {tab === "upload" ? (
             <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
-              <UploadDropzone onStarted={handleStarted} diagram={wantsDiagram} />
+              <UploadDropzone onStarted={handleStarted} diagram={wantsDiagram} vocabulary={vocabulary} />
             </div>
           ) : tab === "record" ? (
             <div id="panel-record" role="tabpanel" aria-labelledby="tab-record">
-              <RecordPanel onStarted={handleStarted} diagram={wantsDiagram} />
+              <RecordPanel onStarted={handleStarted} diagram={wantsDiagram} vocabulary={vocabulary} />
             </div>
           ) : (
             <form

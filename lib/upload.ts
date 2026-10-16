@@ -47,6 +47,7 @@ export function validateMediaFile(file: File): void {
  */
 export interface TranscribeOptions {
   diagram?: boolean;
+  vocabulary?: string;
 }
 
 export async function uploadAndTranscribe(
@@ -63,6 +64,7 @@ export async function uploadAndTranscribe(
   form.append("id", transcriptionId);
   form.append("file", file, file.name || "audio");
   if (options?.diagram) form.append("diagram", "1");
+  if (options?.vocabulary?.trim()) form.append("vocabulary", options.vocabulary.trim());
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

@@ -16,6 +16,9 @@ export function normalizeToMp3(inputPath: string, outputPath: string): Promise<v
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .noVideo()
+      // Nettoyage léger pour améliorer la clarté de la voix avant transcription :
+      // coupe les basses fréquences (bruits de fond), égalise le volume.
+      .audioFilters(["highpass=f=80", "dynaudnorm=f=200:g=11"])
       .audioCodec("libmp3lame")
       .audioBitrate("64k")
       .audioChannels(1)

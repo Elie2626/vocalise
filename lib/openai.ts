@@ -30,16 +30,32 @@ interface VerboseTranscription {
 const TRANSCRIBE_PROMPT =
   "Transcription soignée, avec ponctuation, majuscules et accents corrects.";
 
+/** Construit le prompt de transcription : vocabulaire fourni + continuité + base. */
+function buildTranscribePrompt(priorText?: string, vocabulary?: string): string {
+  const parts: string[] = [];
+  const vocab = vocabulary?.trim();
+  if (vocab) {
+    parts.push(`Orthographie correctement ces termes et noms propres : ${vocab.slice(0, 800)}.`);
+  }
+  parts.push(priorText ? priorText.slice(-300) : TRANSCRIBE_PROMPT);
+  return parts.join(" ");
+}
+
 /**
  * Texte haute précision via gpt-4o-transcribe (bien meilleur que Whisper).
  * Ne fournit pas de timestamps — ceux-ci viennent de Whisper en parallèle.
+ * `vocabulary` biaise le modèle vers l'orthographe correcte de mots spécifiques.
  */
-export async function transcribeText(filePath: string, priorText?: string): Promise<string> {
+export async function transcribeText(
+  filePath: string,
+  priorText?: string,
+  vocabulary?: string
+): Promise<string> {
   const response = await getClient().audio.transcriptions.create({
     file: fs.createReadStream(filePath),
     model: "gpt-4o-transcribe",
     response_format: "text",
-    prompt: priorText ? priorText.slice(-400) : TRANSCRIBE_PROMPT,
+    prompt: buildTranscribePrompt(priorText, vocabulary),
   });
   const text = typeof response === "string" ? response : ((response as { text?: string }).text ?? "");
   return text.trim();
