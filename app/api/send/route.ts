@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUid, adminDb, AuthError } from "@/lib/firebase/admin";
 import { sendTranscriptionEmail, isValidEmail } from "@/lib/email";
+import { decideCoverage } from "@/lib/billing";
 import type { Transcription } from "@/lib/types";
 
 // Limite de taille du PDF accepté (base64), garde-fou.
 const MAX_PDF_BASE64 = 8 * 1024 * 1024;
+const MAX_EMAILS_PER_DAY = 30;
 
 export async function POST(request: NextRequest) {
   let uid: string;
@@ -21,11 +23,26 @@ export async function POST(request: NextRequest) {
   const transcriptionId: unknown = body?.transcriptionId;
   const pdfBase64: unknown = body?.pdfBase64;
 
-  if (typeof transcriptionId !== "string" || !transcriptionId) {
+  if (typeof transcriptionId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(transcriptionId)) {
     return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   }
-  if (typeof pdfBase64 !== "string" || !pdfBase64 || pdfBase64.length > MAX_PDF_BASE64) {
+  // Doit être un vrai PDF (signature « %PDF » = « JVBER » en base64).
+  if (
+    typeof pdfBase64 !== "string" ||
+    !pdfBase64.startsWith("JVBER") ||
+    pdfBase64.length > MAX_PDF_BASE64 ||
+    !/^[A-Za-z0-9+/=]+$/.test(pdfBase64)
+  ) {
     return NextResponse.json({ error: "Pièce jointe invalide." }, { status: 400 });
+  }
+
+  // Envoi réservé aux abonnés (empêche l'usage de comptes gratuits pour du spam).
+  const coverage = await decideCoverage(uid, 0);
+  if (!coverage.ok && coverage.reason === "no_subscription") {
+    return NextResponse.json(
+      { error: "L'envoi par email est réservé aux abonnés." },
+      { status: 402 }
+    );
   }
 
   // Transcription : lue côté serveur, on vérifie qu'elle appartient à l'utilisateur.
@@ -62,6 +79,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Aucun destinataire configuré. Ajoutez-en dans les réglages." },
       { status: 400 }
+    );
+  }
+
+  // Limite anti-abus : nombre d'envois par jour et par compte.
+  const day = new Date().toISOString().slice(0, 10);
+  const limitRef = adminDb().collection("users").doc(uid).collection("limits").doc(`email-${day}`);
+  const allowed = await adminDb().runTransaction(async (tx) => {
+    const count = ((await tx.get(limitRef)).data()?.count as number) ?? 0;
+    if (count >= MAX_EMAILS_PER_DAY) return false;
+    tx.set(limitRef, { count: count + 1, day }, { merge: true });
+    return true;
+  });
+  if (!allowed) {
+    return NextResponse.json(
+      { error: `Limite de ${MAX_EMAILS_PER_DAY} envois par jour atteinte. Réessayez demain.` },
+      { status: 429 }
     );
   }
 

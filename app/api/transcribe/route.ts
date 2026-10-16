@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
   }
   const { clientId, sourceUrl, file, wantsDiagram, plain, vocabulary } = parsed;
 
-  if (clientId && (clientId.includes("/") || clientId.length > 200)) {
+  if (clientId && !/^[A-Za-z0-9_-]{1,64}$/.test(clientId)) {
     return NextResponse.json({ error: "Identifiant invalide." }, { status: 400 });
   }
   if (file && file.size > MAX_UPLOAD_BYTES) {
@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const fileName: string = file?.name || (sourceUrl ? "Fichier distant" : "Fichier");
+  const fileName: string = (file?.name || (sourceUrl ? "Fichier distant" : "Fichier")).slice(0, 120);
   const sourceKind: "audio" | "video" = file ? guessKind(file) : "audio";
 
   const collectionRef = adminDb().collection("users").doc(uid).collection("transcriptions");
@@ -216,6 +216,15 @@ export async function POST(request: NextRequest) {
     updatedAt: now,
   };
   await docRef.set(initial);
+
+  // Pré-contrôle avant tout travail coûteux (téléchargement, conversion) :
+  // sans abonnement actif, on refuse tout de suite.
+  const precheck = await decideCoverage(uid, 0);
+  if (!precheck.ok && precheck.reason === "no_subscription") {
+    const message = "Un abonnement est nécessaire pour transcrire. Choisissez une formule pour continuer.";
+    await docRef.update({ status: "error", error: message, errorCode: "not_covered", updatedAt: Date.now() });
+    return NextResponse.json({ error: message, code: "not_covered" }, { status: 402 });
+  }
 
   const workDir = await mkdtemp(path.join(tmpdir(), "vocalise-"));
 
@@ -278,8 +287,6 @@ export async function POST(request: NextRequest) {
     await docRef.update({
       status: "error",
       error: message,
-      // Détail technique pour le diagnostic (visible uniquement par le propriétaire).
-      serverError: String(error instanceof Error ? error.stack ?? error.message : error).slice(0, 500),
       updatedAt: Date.now(),
     });
     return NextResponse.json({ error: message }, { status: 500 });

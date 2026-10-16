@@ -1,12 +1,13 @@
 import "server-only";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import path from "node:path";
 import dns from "node:dns/promises";
 import net from "node:net";
 
-const MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024;
+// 100 Mo : au-delà, la conversion + transcription ne tient pas dans le délai de la fonction.
+const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 export interface FetchedSource {
   filePath: string;
@@ -38,45 +39,94 @@ export function isUnsupportedStreamingUrl(url: string): boolean {
   }
 }
 
+const FORBIDDEN = "Adresse non autorisée.";
+const MAX_REDIRECTS = 5;
+
+/** Adresse non routable publiquement (réseau local, loopback, métadonnées cloud…). */
+export function isPrivateIp(raw: string): boolean {
+  let ip = raw.toLowerCase();
+  // IPv4 encapsulée dans de l'IPv6 (::ffff:127.0.0.1).
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) ip = mapped[1];
+
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split(".").map(Number);
+    return (
+      a === 0 || // 0.0.0.0/8
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) || // CGNAT
+      (a === 169 && b === 254) || // lien local / métadonnées cloud
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 192 && b === 0) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224 // multicast et réservé
+    );
+  }
+  if (net.isIPv6(ip)) {
+    return (
+      ip === "::" ||
+      ip === "::1" ||
+      ip.startsWith("fc") ||
+      ip.startsWith("fd") ||
+      ip.startsWith("fe8") ||
+      ip.startsWith("fe9") ||
+      ip.startsWith("fea") ||
+      ip.startsWith("feb") ||
+      ip.startsWith("ff") ||
+      ip.startsWith("64:ff9b:") // NAT64
+    );
+  }
+  return true; // format inconnu : on refuse
+}
+
 /** Rejette les cibles internes/privées pour limiter le SSRF. */
 async function assertPublicUrl(url: URL): Promise<void> {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Seuls les liens http(s) sont acceptés.");
   }
-  const host = url.hostname;
+  if (url.username || url.password) throw new Error(FORBIDDEN);
+  if (url.port && !["80", "443"].includes(url.port)) throw new Error(FORBIDDEN);
 
-  const isPrivate = (ip: string): boolean => {
-    if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
-    if (net.isIPv4(ip)) {
-      const [a, b] = ip.split(".").map(Number);
-      if (a === 10) return true;
-      if (a === 172 && b >= 16 && b <= 31) return true;
-      if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true;
-      if (a === 127) return true;
-    }
-    if (net.isIPv6(ip) && (ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80"))) {
-      return true;
-    }
-    return false;
-  };
-
-  if (host === "localhost") {
-    throw new Error("Adresse non autorisée.");
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) {
+    throw new Error(FORBIDDEN);
   }
-  if (net.isIP(host) && isPrivate(host)) {
-    throw new Error("Adresse non autorisée.");
+  if (net.isIP(host)) {
+    if (isPrivateIp(host)) throw new Error(FORBIDDEN);
+    return;
   }
   // Résout le nom pour attraper les cibles internes cachées derrière un domaine.
+  let records: { address: string }[];
   try {
-    const records = await dns.lookup(host, { all: true });
-    if (records.some((r) => isPrivate(r.address))) {
-      throw new Error("Adresse non autorisée.");
-    }
-  } catch (err) {
-    if (err instanceof Error && err.message === "Adresse non autorisée.") throw err;
-    // Si la résolution échoue, on laisse fetch échouer plus loin.
+    records = await dns.lookup(host, { all: true });
+  } catch {
+    throw new Error("Lien injoignable.");
   }
+  if (records.length === 0 || records.some((r) => isPrivateIp(r.address))) {
+    throw new Error(FORBIDDEN);
+  }
+}
+
+/** fetch qui revérifie chaque redirection (sinon un lien public peut rediriger vers le réseau interne). */
+async function safeFetch(start: URL): Promise<{ response: Response; finalUrl: URL }> {
+  let url = start;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    await assertPublicUrl(url);
+    const response = await fetch(url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error(`Téléchargement impossible (HTTP ${response.status}).`);
+      url = new URL(location, url);
+      continue;
+    }
+    return { response, finalUrl: url };
+  }
+  throw new Error("Trop de redirections.");
 }
 
 function guessKindFromMime(mime: string, fileName: string): "audio" | "video" {
@@ -87,10 +137,7 @@ function guessKindFromMime(mime: string, fileName: string): "audio" | "video" {
 }
 
 export async function downloadDirectUrl(rawUrl: string, destDir: string): Promise<FetchedSource> {
-  const url = new URL(rawUrl);
-  await assertPublicUrl(url);
-
-  const response = await fetch(url, { redirect: "follow" });
+  const { response, finalUrl: url } = await safeFetch(new URL(rawUrl));
   if (!response.ok || !response.body) {
     throw new Error(`Téléchargement impossible (HTTP ${response.status}).`);
   }
@@ -102,14 +149,31 @@ export async function downloadDirectUrl(rawUrl: string, destDir: string): Promis
 
   const contentLength = Number(response.headers.get("content-length") ?? "0");
   if (contentLength && contentLength > MAX_DOWNLOAD_BYTES) {
-    throw new Error("Le fichier dépasse la taille maximale (500 Mo).");
+    throw new Error("Le fichier dépasse la taille maximale (100 Mo).");
   }
 
-  const rawName = decodeURIComponent(url.pathname.split("/").pop() || "media");
-  const fileName = rawName.includes(".") ? rawName : `${rawName || "media"}`;
+  let rawName = "media";
+  try {
+    rawName = decodeURIComponent(url.pathname.split("/").pop() || "media");
+  } catch {
+    // nom mal encodé : on garde "media"
+  }
+  const fileName = rawName.replace(/[^\p{L}\p{N}._ -]/gu, "_").slice(0, 120) || "media";
   const filePath = path.join(destDir, "source");
 
-  await pipeline(Readable.fromWeb(response.body as never), createWriteStream(filePath));
+  // Limite appliquée pendant le flux (le serveur distant peut mentir ou omettre la taille).
+  let received = 0;
+  const limiter = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      received += chunk.length;
+      if (received > MAX_DOWNLOAD_BYTES) {
+        cb(new Error("Le fichier dépasse la taille maximale (100 Mo)."));
+      } else {
+        cb(null, chunk);
+      }
+    },
+  });
+  await pipeline(Readable.fromWeb(response.body as never), limiter, createWriteStream(filePath));
 
   return {
     filePath,

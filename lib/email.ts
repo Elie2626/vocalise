@@ -28,7 +28,13 @@ export interface SendTranscriptionParams {
 }
 
 export async function sendTranscriptionEmail(params: SendTranscriptionParams): Promise<void> {
-  const baseName = params.fileName.replace(/\.[^/.]+$/, "") || "transcription";
+  // Nom nettoyé : pas de caractères de contrôle (injection d'en-têtes), longueur bornée.
+  const baseName =
+    params.fileName
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .slice(0, 80)
+      .trim() || "transcription";
   const intro = params.summary
     ? `Résumé :\n${params.summary}\n\n---\n\nTranscription :\n`
     : "Transcription :\n";
