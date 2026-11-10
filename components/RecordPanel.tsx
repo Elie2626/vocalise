@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useAuth } from "@/lib/auth-context";
 import { uploadAndTranscribe, UploadValidationError, MAX_SIZE_BYTES } from "@/lib/upload";
 
-type Phase = "idle" | "recording" | "processing";
+type Phase = "idle" | "recording" | "paused" | "processing";
 
 function pickMimeType(): string {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac"];
@@ -67,7 +67,7 @@ export function RecordPanel({
 
   // Coupure automatique avant la limite de taille
   useEffect(() => {
-    if (phase === "recording" && seconds >= MAX_RECORD_SECONDS) {
+    if ((phase === "recording" || phase === "paused") && seconds >= MAX_RECORD_SECONDS) {
       recorderRef.current?.stop();
     }
   }, [phase, seconds]);
@@ -136,6 +136,20 @@ export function RecordPanel({
     recorderRef.current?.stop();
   }
 
+  function togglePause() {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    if (recorder.state === "recording") {
+      recorder.pause();
+      setPhase("paused");
+    } else if (recorder.state === "paused") {
+      recorder.resume();
+      setPhase("recording");
+    }
+  }
+
+  const active = phase === "recording" || phase === "paused";
+
   return (
     <div className="glass flex flex-col items-center gap-5 rounded-2xl px-6 py-10 text-center">
       {phase === "processing" ? (
@@ -150,20 +164,40 @@ export function RecordPanel({
         </>
       ) : (
         <>
+          <div className="flex items-center gap-4">
+          {active && (
+            <button
+              type="button"
+              onClick={togglePause}
+              aria-label={phase === "paused" ? "Reprendre l'enregistrement" : "Mettre en pause"}
+              className="flex h-14 w-14 items-center justify-center rounded-full border border-(--color-border) text-(--color-foreground) transition-colors hover:bg-(--color-surface-raised)"
+            >
+              {phase === "paused" ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <rect x="6" y="5" width="4" height="14" rx="1" />
+                  <rect x="14" y="5" width="4" height="14" rx="1" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             type="button"
-            onClick={phase === "recording" ? stopRecording : startRecording}
-            aria-label={phase === "recording" ? "Arrêter l'enregistrement" : "Démarrer l'enregistrement"}
+            onClick={active ? stopRecording : startRecording}
+            aria-label={active ? "Arrêter et transcrire" : "Démarrer l'enregistrement"}
             className={`relative flex h-20 w-20 items-center justify-center rounded-full transition-colors ${
-              phase === "recording"
+              active
                 ? "bg-(--color-error) text-white"
                 : "bg-(--color-primary) text-(--color-on-primary) hover:bg-(--color-primary-hover)"
             }`}
           >
             {phase === "recording" && (
-              <span className="absolute inset-0 animate-ping rounded-full bg-(--color-error) opacity-40" />
+              <span className="absolute inset-0 animate-ping rounded-full bg-(--color-error) opacity-40 motion-reduce:hidden" />
             )}
-            {phase === "recording" ? (
+            {active ? (
               <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                 <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
@@ -175,12 +209,15 @@ export function RecordPanel({
               </svg>
             )}
           </button>
+          </div>
 
-          {phase === "recording" ? (
+          {active ? (
             <div>
               <p className="font-mono text-2xl font-semibold tabular-nums">{formatDuration(seconds)}</p>
-              <p className="mt-1 text-sm text-(--color-foreground-muted)">
-                Enregistrement… appuyez pour arrêter et transcrire
+              <p className="mt-1 text-sm text-(--color-foreground-muted)" aria-live="polite">
+                {phase === "paused"
+                  ? "En pause — reprenez ou arrêtez pour transcrire"
+                  : "Enregistrement… pause possible, ou arrêtez pour transcrire"}
               </p>
             </div>
           ) : (
